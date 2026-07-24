@@ -48,7 +48,7 @@ spec:
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "0.1.64" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
+          value: "v0.0.1" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
         - name: SERVICE_NAME
           value: "rpg.gateway"
         - name: SERVICE_ENV

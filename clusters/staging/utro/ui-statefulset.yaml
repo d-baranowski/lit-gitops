@@ -32,7 +32,7 @@ spec:
         - name: SERVICE_ENV
           value: "staging"
         - name: SERVICE_VERSION
-          value: "0.1.64" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
+          value: "v0.0.1" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
         - name: BOOTSTRAP_API_URL
           value: "http://utr-staging-bootstrap.default.svc.cluster.local:8080"
         - name: VERSION_CHECK_URLS

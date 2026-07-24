@@ -40,7 +40,7 @@ spec:
         - name: NOTIFICATION_API_URL
           value: "http://utr-staging-notification.default.svc.cluster.local:9002"
         - name: SERVICE_VERSION
-          value: "0.1.64" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
+          value: "v0.0.1" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
         - name: SERVICE_NAME
           value: "rpg-bootstrap"
         - name: SERVICE_ENV
