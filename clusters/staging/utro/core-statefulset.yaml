@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: core
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.3 # {"$imagepolicy": "flux-system:utr-staging-core"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-core"}
         ports:
         - containerPort: 9102
           name: api
@@ -40,7 +40,7 @@ spec:
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.3" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
+          value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
         - name: SERVICE_NAME
           value: "rpg.core"
         - name: SERVICE_ENV
