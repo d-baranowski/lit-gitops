@@ -49,15 +49,9 @@ spec:
           value: "staging"
         - name: OTEL_COLLECTOR_URL
           value: "http://otel-collector.observability.svc.cluster.local:4318"
-        # Cloudflare Access identity (inspiration-particle team). Update these to
-        # the new cluster's CF Access application if the UI is fronted by a
-        # different CF Access app / hostname.
-        - name: CF_TEAM_DOMAIN
-          value: inspiration-particle.cloudflareaccess.com
-        - name: CF_JWT_ISSUER
-          value: https://inspiration-particle.cloudflareaccess.com
-        - name: CF_JWT_AUDIENCE
-          value: afe0fdc2ff299a8bdc7c1e5fd42cc98ecb9c965f447abce6c559b5d6d3613865
+        # No Cloudflare Access in this deployment — login goes through the app's
+        # own path (see the core.bypass RLS path), so the CF Access JWT env
+        # (CF_TEAM_DOMAIN / CF_JWT_ISSUER / CF_JWT_AUDIENCE) is intentionally omitted.
         livenessProbe:
           httpGet:
             path: /api/health
