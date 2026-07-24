@@ -28,7 +28,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: migrate
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:v0.0.3 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
         command: ["/app/core-event"]
         args: ["-migrate=true"]
         env:
