@@ -2,7 +2,7 @@
 # ECR; the `v?` keeps compat with bare-semver tags too. NOTE: the utro-build
 # Jenkins pipeline pushes :<sha> / :<branch> moving tags — those are ignored by
 # this policy on purpose. Only released semver tags roll out to staging.
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-core
@@ -17,7 +17,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-gateway
@@ -32,7 +32,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-ui
@@ -47,7 +47,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-payment
@@ -62,7 +62,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-notification
@@ -77,7 +77,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-bootstrap
@@ -92,7 +92,7 @@ spec:
     semver:
       range: '>=0.0.0'
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: utr-staging-core-event

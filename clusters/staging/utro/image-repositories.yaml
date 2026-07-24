@@ -2,7 +2,7 @@
 # ghcr-pull-secret), the reflector authenticates to ECR via EKS Pod Identity:
 # Terraform's modules/flux-ecr binds the image-reflector-controller SA to an IAM
 # role with ECR read on utro-*. So `provider: aws` and NO secretRef.
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-core
@@ -12,7 +12,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-gateway
@@ -22,7 +22,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-ui
@@ -32,7 +32,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-payment
@@ -42,7 +42,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-notification
@@ -52,7 +52,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-bootstrap
@@ -62,7 +62,7 @@ spec:
   provider: aws
   interval: 5m0s
 ---
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: utr-staging-core-event
