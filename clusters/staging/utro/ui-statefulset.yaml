@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: ui
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-ui"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:v0.0.1 # {"$imagepolicy": "flux-system:utr-staging-ui"}
         ports:
         - containerPort: 3000
           name: http

@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: bootstrap
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.1 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
         ports:
         - containerPort: 8080
           name: api
