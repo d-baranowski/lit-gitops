@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: ui
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:v0.0.3 # {"$imagepolicy": "flux-system:utr-staging-ui"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-ui"}
         ports:
         - containerPort: 3000
           name: http
@@ -32,7 +32,7 @@ spec:
         - name: SERVICE_ENV
           value: "staging"
         - name: SERVICE_VERSION
-          value: "v0.0.3" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
+          value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
         - name: BOOTSTRAP_API_URL
           value: "http://utr-staging-bootstrap.default.svc.cluster.local:8080"
         - name: VERSION_CHECK_URLS
