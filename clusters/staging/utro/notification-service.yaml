@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: utr-staging-notification
+  namespace: default
+spec:
+  selector:
+    app: utr-staging-notification
+  ports:
+  - port: 9002
+    targetPort: api
+    protocol: TCP
+    name: api
+  - port: 18007
+    targetPort: 18007
+    protocol: TCP
+    name: health
+  type: ClusterIP

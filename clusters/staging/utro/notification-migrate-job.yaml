@@ -1,0 +1,50 @@
+# One-shot DB migration Job for the notification service. Connects as the
+# `migrations` Aurora role. Same Flux re-run-on-image-change semantics as the
+# other migrate Jobs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: utr-staging-notification-migrate
+  namespace: default
+  labels:
+    app: utr-staging-notification-migrate
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: utr-staging-notification-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-notification"}
+        command: ["/app/notification"]
+        args: ["-migrate=true"]
+        env:
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: DB_SSL
+          value: "true"
+        - name: DB_NAME
+          value: "utro"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: password

@@ -1,0 +1,73 @@
+# ECR image scanning. Unlike may-chang's GHCR setup (which needed a
+# ghcr-pull-secret), the reflector authenticates to ECR via EKS Pod Identity:
+# Terraform's modules/flux-ecr binds the image-reflector-controller SA to an IAM
+# role with ECR read on utro-*. So `provider: aws` and NO secretRef.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-core
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-gateway
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-gateway
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-ui
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-payment
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-notification
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-bootstrap
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap
+  provider: aws
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: utr-staging-core-event
+  namespace: flux-system
+spec:
+  image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event
+  provider: aws
+  interval: 5m0s

@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Credentials (materialized from AWS Secrets Manager by ESO)
+  - externalsecrets-db.yaml
+  - externalsecrets-app.yaml
+  # Workloads (namespace: default)
+  - core-migrate-job.yaml
+  - core-statefulset.yaml
+  - core-service.yaml
+  - payment-migrate-job.yaml
+  - payment-statefulset.yaml
+  - payment-service.yaml
+  - notification-migrate-job.yaml
+  - notification-statefulset.yaml
+  - notification-service.yaml
+  - core-event-migrate-job.yaml
+  - core-event-statefulset.yaml
+  - bootstrap-statefulset.yaml
+  - bootstrap-service.yaml
+  - gateway-statefulset.yaml
+  - gateway-service.yaml
+  - ui-statefulset.yaml
+  - ui-service.yaml
+  # Flux image automation (namespace: flux-system)
+  - image-repositories.yaml
+  - image-policies.yaml
+  - image-update-automation.yaml

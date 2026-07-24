@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: utro
+  namespace: flux-system
+spec:
+  # Gated behind external-secrets-resources so the ClusterSecretStore
+  # (aws-secretsmanager) exists before utro's ExternalSecrets try to sync — the
+  # DB creds + app secrets are materialized from AWS Secrets Manager, so the app
+  # pods can't start until ESO has produced their k8s Secrets.
+  dependsOn:
+    - name: external-secrets-resources
+  interval: 10m
+  path: ./clusters/staging/utro
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true

@@ -1,0 +1,60 @@
+# One-shot DB migration Job for the core service. Runs goose against
+# app/core/db/*.sql via the binary's MIGRATE=true path, then exits.
+#
+# Re-runs whenever the image tag changes: the image ref carries the same
+# $imagepolicy marker as the StatefulSet (Flux bumps it), and
+# `kustomize.toolkit.fluxcd.io/force: enabled` makes the kustomize-controller
+# delete+recreate the Job (pod templates are immutable). Goose takes a per-DB
+# advisory lock, so concurrent starts are safe.
+#
+# Connects as the `migrations` Aurora role (owns the DDL), materialized from
+# Secrets Manager by ESO into the db-migrations Secret.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: utr-staging-core-migrate
+  namespace: default
+  labels:
+    app: utr-staging-core-migrate
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: utr-staging-core-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-core"}
+        env:
+        - name: MIGRATE
+          value: "true"
+        - name: TIMEZONE
+          value: "Europe/Warsaw"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: DB_SSL
+          value: "true"
+        - name: DB_NAME
+          value: "utro"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: password

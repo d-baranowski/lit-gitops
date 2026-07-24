@@ -1,0 +1,98 @@
+# core-event: Change-Data-Capture service. Consumes the Postgres WAL over a
+# logical replication slot (core_event_slot / publication core_event_pub) and
+# republishes to pgmq. No API, so no Service — health port only.
+#
+# Runs as the dedicated `core_event` Aurora role. Three pieces make CDC work on
+# Aurora, where the BYPASSRLS attribute the may-chang role relied on is
+# unavailable (rds_superuser can't set it):
+#   - modules/aurora-postgres sets rds.logical_replication=1 (wal_level=logical);
+#   - the Ansible db bootstrap grants rds_replication to core_event (owns the slot);
+#   - app migration 20260724000000_core_event_rls_read_policies.sql adds permissive
+#     `core_event_read` SELECT policies so enrichment reads of the RLS-protected
+#     core tables return rows. (core_event_grants only grants SELECT, which RLS
+#     alone filters to zero rows without BYPASSRLS.)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: utr-staging-core-event
+  namespace: default
+  labels:
+    app: utr-staging-core-event
+spec:
+  serviceName: utr-staging-core-event
+  # Single replica: owns one logical replication slot; a second would contend.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: utr-staging-core-event
+  template:
+    metadata:
+      labels:
+        app: utr-staging-core-event
+    spec:
+      containers:
+      - name: core-event
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
+        ports:
+        - containerPort: 18010
+          name: health
+        env:
+        - name: TIMEZONE
+          value: "Europe/Warsaw"
+        - name: HEALTH_PORT
+          value: "18010"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: SERVICE_VERSION
+          value: "0.1.64" # {"$imagepolicy": "flux-system:utr-staging-core-event:tag"}
+        - name: SERVICE_NAME
+          value: "rpg.core-event"
+        - name: SERVICE_ENV
+          value: "staging"
+        - name: TR_ENABLED
+          value: "true"
+        - name: TR_ENDPOINT
+          value: "otel-collector.observability.svc.cluster.local:4318"
+        - name: TR_HTTPS
+          value: "false"
+        - name: DB_TRACE
+          value: "true"
+        - name: DB_SSL
+          value: "true"
+        - name: DB_NAME
+          value: "utro"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_SEARCH_PATH
+          value: "core,public"
+        - name: WAL_PUBLICATION_NAME
+          value: "core_event_pub"
+        - name: WAL_SLOT_NAME
+          value: "core_event_slot"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-core-event
+              key: host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-core-event
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-core-event
+              key: password
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: health
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: health
+          initialDelaySeconds: 60
+          periodSeconds: 5

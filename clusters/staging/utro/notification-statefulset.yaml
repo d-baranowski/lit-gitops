@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: utr-staging-notification
+  namespace: default
+  labels:
+    app: utr-staging-notification
+spec:
+  serviceName: utr-staging-notification
+  replicas: 1
+  selector:
+    matchLabels:
+      app: utr-staging-notification
+  template:
+    metadata:
+      labels:
+        app: utr-staging-notification
+    spec:
+      containers:
+      - name: notification
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-notification"}
+        ports:
+        - containerPort: 9002
+          name: api
+        - containerPort: 18007
+          name: health
+        env:
+        - name: TIMEZONE
+          value: "Europe/Warsaw"
+        - name: HEALTH_PORT
+          value: "18007"
+        - name: API_PORT
+          value: "9002"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: SERVICE_VERSION
+          value: "0.1.64" # {"$imagepolicy": "flux-system:utr-staging-notification:tag"}
+        - name: SERVICE_NAME
+          value: "rpg.notification"
+        - name: SERVICE_ENV
+          value: "staging"
+        - name: ENABLE_DEV_API
+          value: "true"
+        - name: TR_ENABLED
+          value: "true"
+        - name: TR_ENDPOINT
+          value: "otel-collector.observability.svc.cluster.local:4318"
+        - name: TR_HTTPS
+          value: "false"
+        - name: DB_TRACE
+          value: "true"
+        - name: DB_SSL
+          value: "true"
+        - name: DB_NAME
+          value: "utro"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-app
+              key: host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-app
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-app
+              key: password
+        - name: EMAIL_FROM_ADDRESS
+          value: "kontakt@inspiration-particle.com"
+        - name: EMAIL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: resend
+              key: api_key
+        - name: EMAIL_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: resend
+              key: webhook_secret
+        - name: PUBLIC_WEBHOOK_URL
+          value: "https://utro-test.inspi.cloud/webhook"
+        - name: ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              name: twilio
+              key: account_sid
+        - name: AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: twilio
+              key: auth_token
+        - name: FROM_PHONE
+          valueFrom:
+            secretKeyRef:
+              name: twilio
+              key: from_phone
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: health
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: health
+          initialDelaySeconds: 60
+          periodSeconds: 5

@@ -1,0 +1,57 @@
+# One-shot DB migration Job for the core-event CDC service.
+#
+# Runs `core-event -migrate=true` (goose over app/core-event/db/*.sql): sets
+# REPLICA IDENTITY FULL on core.session/core.therapist and creates the
+# core_event_pub publication. Those need table ownership, so it connects as the
+# `migrations` role (owns the core schema), not the runtime bootstrap role.
+#
+# Depends on core's tables existing — if core-migrate hasn't created
+# core.session/core.therapist yet, this fails and retries (backoffLimit) until
+# they're present.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: utr-staging-core-event-migrate
+  namespace: default
+  labels:
+    app: utr-staging-core-event-migrate
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: utr-staging-core-event-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:0.1.64 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
+        command: ["/app/core-event"]
+        args: ["-migrate=true"]
+        env:
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: DB_SSL
+          value: "true"
+        - name: DB_NAME
+          value: "utro"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-migrations
+              key: password

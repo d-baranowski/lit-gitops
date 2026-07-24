@@ -1,0 +1,25 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: utr-staging-automation
+  namespace: flux-system
+spec:
+  interval: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: 'Automated image update by {{ .AutomationObject }}'
+    push:
+      branch: main
+  update:
+    # Only rewrite the utro app manifests (the $imagepolicy markers live here).
+    path: ./clusters/staging/utro
+    strategy: Setters

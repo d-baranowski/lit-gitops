@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: utr-staging-bootstrap
+  namespace: default
+spec:
+  selector:
+    app: utr-staging-bootstrap
+  ports:
+  - port: 8080
+    targetPort: api
+    protocol: TCP
+    name: api
+  - port: 18008
+    targetPort: 18008
+    protocol: TCP
+    name: health
+  type: ClusterIP
