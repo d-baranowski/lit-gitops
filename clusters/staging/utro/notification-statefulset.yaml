@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: notification
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification:v0.0.1 # {"$imagepolicy": "flux-system:utr-staging-notification"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification:v0.0.2 # {"$imagepolicy": "flux-system:utr-staging-notification"}
         ports:
         - containerPort: 9002
           name: api
@@ -34,7 +34,7 @@ spec:
         - name: LOG_LEVEL
           value: "debug"
         - name: SERVICE_VERSION
-          value: "v0.0.1" # {"$imagepolicy": "flux-system:utr-staging-notification:tag"}
+          value: "v0.0.2" # {"$imagepolicy": "flux-system:utr-staging-notification:tag"}
         - name: SERVICE_NAME
           value: "rpg.notification"
         - name: SERVICE_ENV
