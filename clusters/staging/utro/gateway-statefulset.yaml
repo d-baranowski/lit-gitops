@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: gateway
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-gateway:v0.0.3 # {"$imagepolicy": "flux-system:utr-staging-gateway"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-gateway:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-gateway"}
         ports:
         - containerPort: 9999
           name: api
@@ -48,7 +48,7 @@ spec:
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.3" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
+          value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
         - name: SERVICE_NAME
           value: "rpg.gateway"
         - name: SERVICE_ENV
