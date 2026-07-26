@@ -1,0 +1,27 @@
+# ClusterIssuers + the Cloudflare API token ExternalSecret.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager-resources
+  namespace: flux-system
+spec:
+  dependsOn:
+    # ClusterIssuer CRD exists and cert-manager's webhook is serving. Without
+    # this the apply fails with either "no matches for kind ClusterIssuer" or
+    # 'failed calling webhook "webhook.cert-manager.io": connection refused'.
+    - name: cert-manager
+    # The aws-secretsmanager ClusterSecretStore exists, otherwise the Cloudflare
+    # token ExternalSecret sits in SecretSyncedError forever.
+    - name: external-secrets-resources
+  interval: 10m
+  path: ./clusters/staging/cert-manager/resources
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # CAUTION: wait: true does NOT prove the issuers work. kstatus has no rule for
+  # ClusterIssuer, so a CR with a matching observedGeneration reads as Current
+  # regardless of its Ready condition — this goes green even if ACME
+  # registration failed. Always confirm by hand:
+  #   kubectl get clusterissuer
+  wait: true

@@ -1,0 +1,24 @@
+# external-dns: watches HTTPRoutes and maintains the Cloudflare CNAME.
+#
+# This is not just convenience. The AWS cloud-controller-manager derives the load
+# balancer name from the Service UID, so anything that recreates the data plane
+# Service produces a NEW NLB hostname — which would silently orphan a hand-made
+# DNS record while every Kubernetes object still looked healthy.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: external-dns
+  namespace: flux-system
+spec:
+  dependsOn:
+    # Needs the ClusterSecretStore for its Cloudflare token ExternalSecret.
+    - name: external-secrets-resources
+    # Reads HTTPRoute/Gateway kinds.
+    - name: gateway-api-crds
+  interval: 10m
+  path: ./clusters/staging/external-dns
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true

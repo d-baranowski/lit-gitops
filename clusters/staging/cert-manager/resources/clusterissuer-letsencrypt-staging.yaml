@@ -1,0 +1,29 @@
+# Let's Encrypt STAGING. Untrusted root — browsers will warn — but effectively
+# unlimited rate limits. This is the issuer to point the Gateway at while you are
+# still proving out DNS-01, the token scopes and propagation.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: daniel.m.baranowski@gmail.com
+    privateKeySecretRef:
+      # ACME account key, created by cert-manager in its own namespace.
+      name: letsencrypt-staging-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            # Token auth. Note there is deliberately NO `email` field here — that
+            # is only for legacy Global API Key auth, and setting it alongside
+            # apiTokenSecretRef is a configuration error.
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+        # Scope the solver to the zone we own. A Certificate for any other domain
+        # then fails fast with "no solver configured" instead of firing Cloudflare
+        # API calls that cannot possibly succeed.
+        selector:
+          dnsZones:
+            - inspi.cloud

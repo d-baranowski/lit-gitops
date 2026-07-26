@@ -1,0 +1,28 @@
+# cert-manager operator (chart + CRDs). The ClusterIssuers live in a separate
+# Kustomization — same operator-vs-CRs split as external-secrets-operator, and
+# for the same reason: a ClusterIssuer cannot be applied until its CRD exists AND
+# cert-manager's validating webhook is serving.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  dependsOn:
+    # config.gatewayAPI.enable makes the controller watch Gateway resources, so
+    # the Gateway API CRDs must exist first or it errors on startup.
+    - name: gateway-api-crds
+  # Deliberately NOT dependent on nginx-gateway. With DNS-01 (rather than
+  # HTTP-01) cert-manager never touches the ingress data path, so chaining them
+  # would only mean an NLB failure also blocks certificate issuance.
+  interval: 10m
+  path: ./clusters/staging/cert-manager
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Gates on the HelmRelease being Ready, which via helm --wait covers the CRDs,
+  # all three Deployments, and the startupapicheck hook Job — i.e. the webhook is
+  # genuinely serving before any ClusterIssuer is applied.
+  wait: true
+  timeout: 12m

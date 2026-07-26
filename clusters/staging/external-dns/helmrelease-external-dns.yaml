@@ -1,0 +1,80 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  releaseName: external-dns
+  targetNamespace: external-dns
+  interval: 10m
+  chart:
+    spec:
+      chart: external-dns
+      # Chart 1.21.1 == app v0.21.0.
+      version: 1.21.1
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    provider:
+      name: cloudflare
+
+    # Gateway API, not Ingress — this cluster has no Ingress resources at all.
+    # The HTTPRoute supplies the hostname; external-dns follows its parentRef to
+    # the Gateway and reads the load balancer address from the Gateway's status.
+    sources:
+      - gateway-httproute
+
+    # Hard blast-radius limit: external-dns can only touch records in this zone,
+    # so a misconfiguration cannot wander into other Cloudflare zones.
+    domainFilters:
+      - inspi.cloud
+
+    # sync (not upsert-only) so a deleted HTTPRoute also removes its DNS record —
+    # otherwise records accumulate and point at dead load balancers. Safe because
+    # of txtOwnerId below.
+    policy: sync
+
+    # Ownership marker written into a companion TXT record. external-dns will only
+    # modify records whose TXT says this id, so it can never clobber the
+    # hand-managed jenkins-aws.inspi.cloud record that Terraform owns. Changing
+    # this value orphans existing records — treat it as immutable.
+    txtOwnerId: lit-staging
+    txtPrefix: externaldns-
+
+    # DNS-only (grey cloud): the browser connects straight to the NLB and sees
+    # the Let's Encrypt certificate cert-manager issued. Turning this on later
+    # means Cloudflare terminates TLS at its edge, which also discards the client
+    # IP preservation that externalTrafficPolicy: Local buys — treat flipping it
+    # as a coordinated change, not a toggle.
+    extraArgs:
+      - --cloudflare-proxied=false
+
+    # Token from the same Terraform-minted Secrets Manager entry cert-manager
+    # uses, materialized into this namespace by the ExternalSecret alongside.
+    # The Cloudflare provider reads CF_API_TOKEN.
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+
+    # One replica: this is a reconciler, not a data path. If it stops, DNS simply
+    # stops being updated.
+    replicaCount: 1
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi

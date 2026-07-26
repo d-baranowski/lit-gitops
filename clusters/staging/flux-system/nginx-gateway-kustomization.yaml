@@ -1,0 +1,29 @@
+# NGINX Gateway Fabric control plane + the GatewayClass it owns.
+#
+# Deliberately does NOT gate `utro`. The application must stay deployable when a
+# load balancer fails to provision — only the Gateway and the HTTPRoute (leaf
+# resources) carry that dependency.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nginx-gateway
+  namespace: flux-system
+spec:
+  dependsOn:
+    # The controller watches Gateway/HTTPRoute; without the CRDs it crash-loops.
+    - name: gateway-api-crds
+  interval: 10m
+  path: ./clusters/staging/nginx-gateway
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # NOTE: this does NOT wait on the NLB. The chart only installs the control
+  # plane (its Service is ClusterIP); the LoadBalancer Service is provisioned
+  # per-Gateway at runtime, after the `gateway` Kustomization applies. An NLB
+  # provisioning failure therefore never surfaces here — nor in Flux at all
+  # (kstatus reads a Gateway as Current regardless of Programmed). It only shows
+  # as SyncLoadBalancerFailed events on the data plane Service:
+  #   kubectl -n nginx-gateway describe svc
+  wait: true
+  timeout: 10m

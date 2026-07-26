@@ -1,0 +1,51 @@
+# Gateway API CRDs (standard channel), pinned to the version NGINX Gateway
+# Fabric 2.6.7 vendors: v1.5.1.
+#
+# NGF's install docs tell you to run
+#   kubectl kustomize "https://github.com/nginx/.../gateway-api/standard?ref=vX" | kubectl apply -f -
+# which is imperative and has no place in a GitOps repo. This is the declarative
+# equivalent.
+#
+# NOTE: this points at the kubernetes-sigs/gateway-api repo, NOT at NGF's
+# vendored copy. NGF's config/crd/gateway-api/standard/kustomization.yaml pulls a
+# REMOTE https://github.com/... base, and Flux's kustomize-controller rejects
+# remote bases — it would never build. gateway-api's own ./config/crd references
+# only local files.
+#
+# Do NOT bump this to a newer Gateway API release independently of NGF. The CRD
+# schemas and the controller are versioned together; check what the NGF tag
+# vendors first:
+#   curl -sL https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/<tag>/config/crd/gateway-api/standard/kustomization.yaml
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://github.com/kubernetes-sigs/gateway-api
+  ref:
+    tag: v1.5.1
+  # Public repo, no secretRef needed. Ignore everything but the CRDs so the
+  # stored artifact is a few hundred KB rather than the whole project.
+  ignore: |
+    /*
+    !/config/crd
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./config/crd
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: gateway-api
+  # Gates NGF and cert-manager: both fail hard if the Gateway/HTTPRoute kinds do
+  # not exist when they start.
+  wait: true
+  timeout: 5m

@@ -1,0 +1,108 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  releaseName: cert-manager
+  targetNamespace: cert-manager
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: cert-manager
+      # NOTE the leading "v". Jetstack chart versions are v-prefixed, unlike
+      # every other chart in this repo — "1.21.0" resolves to nothing, and the
+      # error surfaces on the HelmChart object in flux-system rather than on this
+      # HelmRelease, which makes it annoying to find.
+      version: v1.21.0
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    crds:
+      # This is what actually installs the CRDs. cert-manager renders them from
+      # templates/ gated on this value, NOT from the chart's crds/ directory, so
+      # Flux's install.crds policy never sees them.
+      #
+      # The pre-1.15 spelling was `installCRDs: true`. That key is now silently
+      # IGNORED — set it by mistake and you get no CRDs and a baffling
+      # "no matches for kind ClusterIssuer" later. (Don't copy it across from the
+      # external-secrets HelmRelease, which still uses the old style.)
+      enabled: true
+      # helm.sh/resource-policy: keep. An accidental HelmRelease deletion must not
+      # cascade-delete every Certificate and ClusterIssuer in the cluster.
+      keep: true
+
+    # Staging: a cert-manager outage delays renewal (30 days of headroom), it
+    # does not cause an outage. One of each is enough.
+    replicaCount: 1
+    webhook:
+      replicaCount: 1
+      # securePort 10250 is the chart default, chosen upstream because that port
+      # is already reachable from the control plane on virtually every cluster
+      # (it is the kubelet port) — which matters here, where nodes are private
+      # and the EKS module only opens a specific set. Do not change it.
+    cainjector:
+      replicaCount: 1
+
+    # Full ControllerConfiguration object — `config` is not a loose map of flags.
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      # Makes cert-manager watch Gateway resources and honour the
+      # cert-manager.io/cluster-issuer annotation on them. Without it the Gateway
+      # annotation is inert and no Certificate is ever created.
+      #
+      # The key is `enable`, NOT `enabled` — cert-manager's own docs get this
+      # wrong. Verify against the chart's values.yaml if issuance never starts.
+      # Requires the Gateway API CRDs to already exist, which is why the Flux
+      # Kustomization dependsOn gateway-api-crds.
+      gatewayAPI:
+        enable: true
+
+    # --- DNS-01 self-check ------------------------------------------------
+    # Before asking Let's Encrypt to validate, cert-manager verifies the
+    # _acme-challenge TXT record itself. By default it walks the DNS hierarchy
+    # from the root — many UDP/53 flows through a single t4g.nano NAT instance,
+    # and prone to transient failure. Pin it to two public recursive resolvers:
+    # deterministic, one flow each.
+    #
+    # Two INDEPENDENT operators on purpose: 1.1.1.1 is Cloudflare's own resolver
+    # and could serve a stale negative cache for a record Cloudflare just wrote.
+    #
+    # Failure mode without this: "Waiting for DNS-01 challenge propagation" that
+    # never resolves, while the record is plainly visible in the Cloudflare UI.
+    dns01RecursiveNameservers: "1.1.1.1:53,8.8.8.8:53"
+    dns01RecursiveNameserversOnly: true
+
+    # A post-install helm hook that blocks until the webhook is genuinely
+    # serving. It is the only thing that reliably closes the race between "webhook
+    # Deployment is Available" and "cainjector has injected the CA bundle" —
+    # which is what makes `dependsOn: cert-manager` meaningful for the
+    # ClusterIssuers. Disabling it to "speed up the install" reintroduces the race.
+    startupapicheck:
+      enabled: true
+      timeout: 5m
+
+    prometheus:
+      enabled: true
+      servicemonitor:
+        # No Prometheus Operator on this cluster, so the ServiceMonitor CRD does
+        # not exist and enabling this would fail the whole HelmRelease.
+        enabled: false
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi

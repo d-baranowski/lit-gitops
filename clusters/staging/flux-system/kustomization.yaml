@@ -5,4 +5,12 @@ resources:
 - gotk-sync.yaml
 - external-secrets-operator-kustomization.yaml
 - external-secrets-resources-kustomization.yaml
+- cluster-autoscaler-kustomization.yaml
+- gateway-api-crds-kustomization.yaml
+- nginx-gateway-kustomization.yaml
+- cert-manager-kustomization.yaml
+- cert-manager-resources-kustomization.yaml
+- external-dns-kustomization.yaml
+- gateway-kustomization.yaml
 - utro-kustomization.yaml
+- utro-route-kustomization.yaml

@@ -1,0 +1,28 @@
+# Let's Encrypt PRODUCTION — publicly trusted, but rate limited:
+#   * 50 certificates per registered domain (inspi.cloud) per week
+#   * 5 duplicate certificates (identical SAN set) per week    <-- bites on retries
+#   * 5 FAILED validations per account/hostname/hour           <-- bites on typos
+#
+# Do not point the Gateway here until the identical config has issued cleanly
+# against letsencrypt-staging. A wrong token scope or a dnsZones typo burns the
+# failed-validation budget in under five minutes, and then you are debugging in
+# one-hour increments.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: daniel.m.baranowski@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+        selector:
+          dnsZones:
+            - inspi.cloud

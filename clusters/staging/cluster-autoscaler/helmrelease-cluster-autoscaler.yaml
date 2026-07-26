@@ -1,0 +1,107 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+spec:
+  releaseName: cluster-autoscaler
+  targetNamespace: kube-system
+  interval: 10m
+  chart:
+    spec:
+      # PIN TO THE CLUSTER'S KUBERNETES MINOR. Cluster Autoscaler is versioned in
+      # lockstep with Kubernetes and cross-version combinations are explicitly
+      # not tested or supported upstream.
+      #
+      #   chart 9.53.0 -> app v1.34.2 -> EKS 1.34   <- this cluster
+      #
+      # So do NOT bump this to the newest chart: 9.59.0 ships CAS 1.35 and would
+      # be a mismatch. When the cluster moves to 1.35, find the matching chart:
+      #   curl -s https://kubernetes.github.io/autoscaler/index.yaml \
+      #     | grep -E '^\s+(version|appVersion):' | paste - - | grep 1.35.
+      chart: cluster-autoscaler
+      version: 9.53.0
+      sourceRef:
+        kind: HelmRepository
+        name: autoscaler
+        namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Without this the chart's fullname template yields
+    # "cluster-autoscaler-aws-cluster-autoscaler" for the Deployment and Service.
+    # Override it so every kubectl command in INGRESS-DEPLOY.md is readable.
+    # (Does not affect the ServiceAccount, which is pinned by name below.)
+    fullnameOverride: cluster-autoscaler
+
+    # Auto-discovery finds the node group's ASG by the tags
+    # k8s.io/cluster-autoscaler/enabled=true and
+    # k8s.io/cluster-autoscaler/<clusterName>=owned. EKS applies BOTH to a
+    # managed node group's ASG automatically, so nothing tags it in Terraform —
+    # and the same two tags are what the IAM policy conditions on
+    # (modules/cluster-autoscaler).
+    autoDiscovery:
+      clusterName: lit-staging-eks
+
+    awsRegion: eu-central-1
+
+    rbac:
+      create: true
+      serviceAccount:
+        create: true
+        # MUST be set explicitly and MUST match the Pod Identity association in
+        # modules/cluster-autoscaler (namespace kube-system, sa
+        # cluster-autoscaler). Left empty, the chart generates a name from the
+        # fullname template, the association would not bind, and the autoscaler
+        # would fail every AWS call with an access-denied it cannot explain.
+        name: cluster-autoscaler
+        # No eks.amazonaws.com/role-arn annotation: that is IRSA. Pod Identity
+        # injects credentials via the agent, which is already installed as a
+        # cluster addon.
+        annotations: {}
+
+    # Single replica by design — the autoscaler uses leader election but only one
+    # replica does work; it is not horizontally scalable.
+    replicaCount: 1
+
+    extraArgs:
+      # Pick the node group that leaves the least idle capacity after scaling.
+      # A sane general-purpose default; with one node group it rarely matters,
+      # but it is the right thing the moment a second group appears.
+      expander: least-waste
+
+      # NOT setting balance-similar-node-groups. That balances across SEVERAL
+      # ASGs (typically one per AZ). Here a single managed node group spans both
+      # private subnets, so the ASG itself handles AZ balance and the flag has
+      # nothing to do.
+      #
+      # Leaving skip-nodes-with-system-pods at its default (true): a node running
+      # non-DaemonSet kube-system pods is not scaled down. coredns has 2 replicas
+      # so at most 2 nodes are ever pinned by this, and min_size is 2 — nodes
+      # above the floor still scale in normally.
+
+      # Log at a level where scale decisions are actually readable.
+      v: 4
+
+    # Do not let the autoscaler evict ITSELF while draining a node it chose to
+    # remove — that strands the scale-down half-done until the pod reschedules.
+    podAnnotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+
+    # system-cluster-critical is the chart default; restated because it matters:
+    # the autoscaler must not be the pod that gets evicted when the cluster is
+    # full, since it is the thing that fixes being full.
+    priorityClassName: system-cluster-critical
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 300Mi
+      limits:
+        # Memory only — it holds the whole cluster state in memory, and a CPU
+        # limit would throttle the scan loop.
+        memory: 600Mi

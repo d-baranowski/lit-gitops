@@ -1,0 +1,23 @@
+# Cluster Autoscaler — resizes the EKS managed node group when pods go
+# unschedulable, and scales back in when nodes sit underutilised.
+#
+# No dependsOn: it needs nothing from ESO, cert-manager or the gateway. Its only
+# prerequisite is the IAM role + Pod Identity association, which is Terraform's
+# job (modules/cluster-autoscaler) and is applied before this ever reconciles.
+#
+# Deliberately independent of the ingress stack: capacity management must keep
+# working even when everything else is broken — arguably especially then.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cluster-autoscaler
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/staging/cluster-autoscaler
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m

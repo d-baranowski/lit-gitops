@@ -1,0 +1,7 @@
+# No Namespace manifest: this deploys into kube-system, which already exists and
+# must never be owned (or pruned) by Flux.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrepo-autoscaler.yaml
+  - helmrelease-cluster-autoscaler.yaml
