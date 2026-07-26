@@ -62,12 +62,19 @@ spec:
       # cert-manager.io/cluster-issuer annotation on them. Without it the Gateway
       # annotation is inert and no Certificate is ever created.
       #
-      # The key is `enable`, NOT `enabled` — cert-manager's own docs get this
-      # wrong. Verify against the chart's values.yaml if issuance never starts.
-      # Requires the Gateway API CRDs to already exist, which is why the Flux
-      # Kustomization dependsOn gateway-api-crds.
+      # The field is `enabled`. The commented example in the chart's values.yaml
+      # says `enable:` — that comment is WRONG, and copying it crash-loops the
+      # controller: this config is decoded strictly, so an unrecognised key is a
+      # fatal parse error at startup. cainjector and webhook keep running (they
+      # do not read this file), which makes it look like a controller-only bug.
+      # Source of truth is the Go type, GatewayAPIConfig in
+      # pkg/apis/config/controller/v1alpha1/types.go:
+      #     Enabled *bool `json:"enabled,omitempty"`
+      #
+      # Requires the Gateway API CRDs to already exist, hence the Flux
+      # Kustomization's dependsOn gateway-api-crds.
       gatewayAPI:
-        enable: true
+        enabled: true
 
     # --- DNS-01 self-check ------------------------------------------------
     # Before asking Let's Encrypt to validate, cert-manager verifies the
