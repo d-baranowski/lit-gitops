@@ -10,8 +10,9 @@
 #                            is why the database sat empty.
 #   ENABLE_DEV_API=false  -> runs Bootstrap.Run(ctx) once, then calls
 #                            Shutdowner.Shutdown() and exits. That is a Job.
-# The StatefulSet stays as-is; it serves the Dev Tools RPC (ResetDatabase). This
-# Job is the thing that actually populates a fresh cluster.
+# The StatefulSet has been REMOVED: with the dev API disabled for this
+# environment it had no remaining purpose, and would seed-then-exit into a
+# crash-loop. This Job is now the only thing that populates a fresh cluster.
 #
 # WHY THE GATE IS NOT OPTIONAL:
 # Bootstrap.Run() is NOT idempotent. Only permission.sql carries
@@ -90,11 +91,6 @@ spec:
             - |
               set -eu
 
-              # Fixed id from app/bootstrap/service/bootstrap/a_service.go
-              # (var AdminUserID). Presence of this exact row is the seed marker:
-              # it is the first thing Run() creates and it never changes.
-              ADMIN_ID='2imfnAVjkbfcwEos1LLLztn1vEP'
-
               echo "==> 1/3 waiting for the database to accept connections"
               for i in $(seq 1 60); do
                 pg_isready -q && break
@@ -121,16 +117,32 @@ spec:
                 echo "    $t = $(psql -tAc "SELECT max(version_id) FROM public.$t")"
               done
 
-              echo "==> 3/3 has this database already been seeded?"
-              # Queried as the `migrations` role, which OWNS core.user. Aurora
-              # grants BYPASSRLS to nobody, so a non-owner would be filtered by
-              # RLS and see 0 rows — and we would re-seed an already-seeded
+              echo "==> 3/3 has a previous seed COMPLETED?"
+              # Probes core.recurring_cashflow because it is the LAST thing
+              # Bootstrap.Run() seeds — matching the app-side guard in
+              # app/bootstrap/service/bootstrap/a_service.go.
+              #
+              # Do NOT probe something early such as the admin user: that is the
+              # FIRST row Run() writes, so a run that died half way still leaves
+              # it behind, and the gate would report "already bootstrapped" and
+              # skip a partially populated database forever. That is not
+              # hypothetical — it is exactly what happened on the first run here,
+              # which seeded user/permission/country/language/service, failed at
+              # therapists, and was then masked by this check.
+              #
+              # Queried as the `migrations` role, which OWNS the core tables.
+              # Aurora grants BYPASSRLS to nobody, so a non-owner would be
+              # filtered by RLS to zero rows and re-seed an already-seeded
               # database straight into duplicate-key failures.
-              seeded=$(psql -tAc "SELECT count(*) FROM core.\"user\" WHERE id = '$ADMIN_ID'")
+              seeded=$(psql -tAc "SELECT count(*) FROM core.recurring_cashflow")
               if [ "$seeded" = "0" ]; then
-                echo "    admin user absent -> SEED"
+                echo "    no completed seed found -> SEED"
+                # A partial seed will now fail on duplicate keys rather than be
+                # silently skipped. That is deliberate: Bootstrap.Run() is not
+                # idempotent, so a half-seeded database needs a human, and
+                # failing loudly is how it asks for one.
               else
-                echo "    admin user present -> already bootstrapped, SKIP"
+                echo "    previous seed completed -> SKIP"
                 touch /gate/skip
               fi
       containers:
