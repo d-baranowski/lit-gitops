@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: payment
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-payment"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment:v0.0.5 # {"$imagepolicy": "flux-system:utr-staging-payment"}
         ports:
         - containerPort: 9102
           name: api
@@ -36,7 +36,7 @@ spec:
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-payment:tag"}
+          value: "v0.0.5" # {"$imagepolicy": "flux-system:utr-staging-payment:tag"}
         - name: SERVICE_NAME
           value: "rpg.payment"
         - name: SERVICE_ENV

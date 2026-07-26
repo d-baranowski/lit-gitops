@@ -49,13 +49,11 @@ spec:
         app: utr-staging-bootstrap-seed
     spec:
       restartPolicy: OnFailure
-
       volumes:
         # Carries one bit from the init container to the main container:
         # does /gate/skip exist or not.
         - name: gate
           emptyDir: {}
-
       initContainers:
         - name: preconditions
           # postgres image purely for psql — the bootstrap image is alpine +
@@ -135,10 +133,9 @@ spec:
                 echo "    admin user present -> already bootstrapped, SKIP"
                 touch /gate/skip
               fi
-
       containers:
         - name: bootstrap
-          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
+          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.5 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
           volumeMounts:
             - name: gate
               mountPath: /gate
@@ -162,12 +159,10 @@ spec:
             # nothing and never terminates.
             - name: ENABLE_DEV_API
               value: "false"
-
             # Long-lived auth sessions for the Cypress suite. Off: this seeds a
             # usable staging environment, not an E2E fixture.
             - name: SEED_E2E_SESSIONS
               value: "false"
-
             - name: TIMEZONE
               value: "Europe/Warsaw"
             - name: LOG_LEVEL
@@ -177,8 +172,7 @@ spec:
             - name: SERVICE_ENV
               value: "staging"
             - name: SERVICE_VERSION
-              value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
-
+              value: "v0.0.5" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
             # Tracing off: there is no otel-collector in this cluster, and with
             # it enabled the Job's logs are ~99% "failed to upload metrics",
             # which is exactly what made the StatefulSet's logs unreadable.
@@ -186,7 +180,6 @@ spec:
               value: "false"
             - name: DB_TRACE
               value: "false"
-
             # Connects as `migrations`, which owns the core tables. Required:
             # the seed writes to RLS-protected tables and Aurora has no
             # BYPASSRLS, so only the owner can insert them.
