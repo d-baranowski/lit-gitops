@@ -18,13 +18,19 @@ metadata:
     # listener hostnames, writing the result to the certificateRefs Secret below
     # — in THIS namespace, not the route's.
     #
-    # STEP 1 is letsencrypt-staging: untrusted root (browsers warn) but
-    # effectively unlimited rate limits, which is what you want while proving out
-    # the DNS-01 solver, the token scopes and propagation.
-    # STEP 2, in a separate commit once the Certificate is Ready, is to change
-    # this to letsencrypt-prod. cert-manager notices the issuerRef change and
-    # re-issues on its own — do NOT delete the Secret by hand.
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    # letsencrypt-PROD = Let's Encrypt's production ACME endpoint, i.e. the one
+    # that issues publicly TRUSTED certificates. It is not about our production
+    # environment — this staging cluster serves a real public hostname and needs
+    # a real padlock.
+    #
+    # letsencrypt-staging (LE's test endpoint, untrusted root, no meaningful rate
+    # limits) was used first to prove the DNS-01 solver and the Cloudflare token
+    # scope without risking LE prod's 5-failed-validations-per-hostname-per-hour
+    # limit. That succeeded, so this is now switched over.
+    #
+    # cert-manager notices the issuerRef change and re-issues by itself — do NOT
+    # delete the Secret by hand.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   gatewayClassName: nginx
 
