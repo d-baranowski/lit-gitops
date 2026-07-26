@@ -97,46 +97,22 @@ spec:
         # data plane pod become healthy targets — which is the behaviour the
         # topology spread above exists to guarantee.
         externalTrafficPolicy: Local
-        annotations:
-          # NLB rather than the CCM's default Classic ELB. We terminate TLS at
-          # nginx (the cert lives in a Secret), so we need pure L4 pass-through:
-          # NLB is cheaper, provisions faster, and preserves the client source IP
-          # natively with instance targets, which a CLB in TCP mode cannot do
-          # without PROXY protocol.
-          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-
-          # NLB cross-zone defaults to OFF (and is billed, unlike ALB). Belt and
-          # braces with the topology spread: the spread fixes steady state, this
-          # covers the windows the scheduler cannot — rolling updates, node
-          # drain, a node going NotReady. Inter-AZ transfer on staging is cents.
-          service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-
-          # Faster failover than the 30s default. The in-tree CCM NLB path only
-          # accepts 10 or 30 here; any other value is rejected outright.
-          service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
-          service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
-          service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
-
-          # Match the Terraform default_tags so this shows up correctly in Cost
-          # Explorer next to the rest of the staging stack. It is invisible to
-          # Terraform, so this is the only way it gets attributed.
-          service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=learn-it-devops,Environment=staging,ManagedBy=flux,Component=ingress"
-
-          # DELIBERATELY ABSENT — all AWS Load Balancer Controller annotations,
-          # which is NOT installed here. The CCM ignores them silently:
-          #   aws-load-balancer-type: "external"  -> Service stuck <pending>
-          #                                          forever with NO error event.
-          #                                          This is what most post-2024
-          #                                          tutorials tell you to write.
-          #   nlb-target-type: ip                 -> ignored; you get instance
-          #                                          targets regardless.
-          #   aws-load-balancer-scheme            -> ignored. internet-facing is
-          #                                          the CCM default, obtained by
-          #                                          NOT setting
-          #                                          aws-load-balancer-internal.
-          #   aws-load-balancer-subnets           -> ignored; subnet selection is
-          #                                          by tag
-          #                                          (kubernetes.io/role/elb=1).
+        #
+        # NO `annotations:` HERE. The chart happily renders nginx.service.annotations
+        # into the NginxProxy CR, but the NginxProxy CRD it ships does not declare
+        # that field, so the install dies with:
+        #   server-side apply failed ... Kind=NginxProxy:
+        #   .spec.kubernetes.service.annotations: field not declared in schema
+        # (spec.kubernetes.service permits only externalTrafficPolicy,
+        #  loadBalancerClass, loadBalancerIP, loadBalancerSourceRanges, nodePorts,
+        #  patches and type.)
+        #
+        # The AWS load-balancer annotations therefore live on the Gateway, at
+        # spec.infrastructure.annotations — the standard Gateway API field for
+        # exactly this. NGF's provisioner copies them onto every object it builds
+        # for the Gateway, including the data plane Service
+        # (buildLabelsAndAnnotations -> objectMeta -> buildNginxService).
+        # See nginx-gateway/gateway/gateway-utro.yaml.
 
       container:
         resources:

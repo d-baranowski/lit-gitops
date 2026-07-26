@@ -27,6 +27,52 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-staging
 spec:
   gatewayClassName: nginx
+
+  # AWS load-balancer configuration for the data plane Service.
+  #
+  # These live here, not in the NGF chart values: the chart's
+  # nginx.service.annotations renders into the NginxProxy CR, whose CRD does not
+  # declare that field, and the Helm install fails outright. spec.infrastructure
+  # is the standard Gateway API home for this, and NGF's provisioner copies these
+  # onto the Service it creates for this Gateway.
+  infrastructure:
+    annotations:
+      # NLB rather than the CCM's default Classic ELB. TLS terminates at nginx
+      # (the cert is a Secret), so we want pure L4 pass-through: NLB is cheaper,
+      # provisions faster, and preserves the client source IP natively with
+      # instance targets — which a CLB in TCP mode cannot do without PROXY
+      # protocol.
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+      # NLB cross-zone defaults to OFF (and is billed, unlike ALB). Belt and
+      # braces with the data plane's topology spread: the spread fixes steady
+      # state, this covers what the scheduler cannot — rolling updates, node
+      # drain, a node going NotReady. Inter-AZ transfer on staging is cents.
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+      # Faster failover than the 30s default. The in-tree CCM NLB path accepts
+      # only 10 or 30 here; any other value is rejected outright.
+      service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
+      service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+      service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+
+      # Match the Terraform default_tags so this shows up in Cost Explorer beside
+      # the rest of the staging stack. The load balancer is invisible to
+      # Terraform, so this is the only way it gets attributed.
+      service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=learn-it-devops,Environment=staging,ManagedBy=flux,Component=ingress"
+
+      # DELIBERATELY ABSENT — all AWS Load Balancer Controller annotations, which
+      # is NOT installed here. The in-tree CCM ignores them silently:
+      #   aws-load-balancer-type: "external"  -> Service stuck <pending> forever
+      #                                          with NO error event. This is
+      #                                          what most tutorials tell you to
+      #                                          write.
+      #   nlb-target-type: ip                 -> ignored; instance targets anyway.
+      #   aws-load-balancer-scheme            -> ignored; internet-facing is the
+      #                                          CCM default, obtained by NOT
+      #                                          setting -internal.
+      #   aws-load-balancer-subnets           -> ignored; subnets are chosen by
+      #                                          tag (kubernetes.io/role/elb=1).
   listeners:
     # Port 80 exists only to redirect. The redirect itself is an HTTPRoute with a
     # RequestRedirect filter (see utro/route/) — Gateway API has no equivalent of
