@@ -51,12 +51,21 @@ spec:
     txtPrefix: externaldns-
 
     # DNS-only (grey cloud): the browser connects straight to the NLB and sees
-    # the Let's Encrypt certificate cert-manager issued. Turning this on later
-    # means Cloudflare terminates TLS at its edge, which also discards the client
-    # IP preservation that externalTrafficPolicy: Local buys — treat flipping it
-    # as a coordinated change, not a toggle.
-    extraArgs:
-      - --cloudflare-proxied=false
+    # the Let's Encrypt certificate cert-manager issued. This is external-dns's
+    # DEFAULT (--cloudflare-proxied defaults to false), so it is expressed by
+    # omission rather than by a flag.
+    #
+    # Do NOT "make it explicit" with `--cloudflare-proxied=false`: external-dns
+    # parses flags with kingpin, where booleans are `--flag` / `--no-flag` and
+    # never take `=value`. That form dies at startup with
+    #     level=fatal msg="flag parsing error: unexpected false"
+    # which reads like a chart problem and is not.
+    #
+    # To enable the orange cloud later, add `--cloudflare-proxied` with no value
+    # — but treat it as a coordinated change: Cloudflare then terminates TLS at
+    # its edge, which also discards the client-IP preservation that
+    # externalTrafficPolicy: Local buys.
+    extraArgs: []
 
     # Token from the same Terraform-minted Secrets Manager entry cert-manager
     # uses, materialized into this namespace by the ExternalSecret alongside.
