@@ -13,4 +13,5 @@ resources:
 - external-dns-kustomization.yaml
 - gateway-kustomization.yaml
 - utro-kustomization.yaml
+- utro-bootstrap-kustomization.yaml
 - utro-route-kustomization.yaml

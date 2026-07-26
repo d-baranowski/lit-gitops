@@ -1,0 +1,27 @@
+# Seeds the staging test data once per fresh database.
+#
+# Separate from `utro` so the seed cannot block the application rolling out, and
+# so it is obvious in `flux get kustomizations` whether seeding happened.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: utro-bootstrap
+  namespace: flux-system
+spec:
+  dependsOn:
+    # `utro` carries the four *-migrate Jobs and has wait: true, so by the time
+    # this applies the schema is fully migrated and the app Services exist.
+    # The Job's init container re-checks anyway — Flux ordering does not protect
+    # someone re-running the Job by hand.
+    - name: utro
+  interval: 10m
+  path: ./clusters/staging/utro/bootstrap
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Waits for the Job to reach Complete. A seed that fails is therefore visible
+  # as a non-Ready Kustomization rather than a silently empty database — which
+  # is exactly the failure we just spent an afternoon diagnosing.
+  wait: true
+  timeout: 10m

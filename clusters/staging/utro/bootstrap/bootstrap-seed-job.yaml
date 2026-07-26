@@ -1,0 +1,219 @@
+# One-shot seed of the staging test data (admin user, therapists, customers,
+# sessions, ...). Safe to leave in place forever: it checks whether the database
+# has already been seeded and exits without doing anything if so.
+#
+# WHY A JOB, when utr-staging-bootstrap already runs as a StatefulSet:
+# the bootstrap binary has two modes (app/bootstrap/cmd/main.go).
+#   ENABLE_DEV_API=true   -> "bootstrap will run on API call": it starts the
+#                            Connect RPC server and seeds NOTHING until something
+#                            calls it. This is what the StatefulSet does, which
+#                            is why the database sat empty.
+#   ENABLE_DEV_API=false  -> runs Bootstrap.Run(ctx) once, then calls
+#                            Shutdowner.Shutdown() and exits. That is a Job.
+# The StatefulSet stays as-is; it serves the Dev Tools RPC (ResetDatabase). This
+# Job is the thing that actually populates a fresh cluster.
+#
+# WHY THE GATE IS NOT OPTIONAL:
+# Bootstrap.Run() is NOT idempotent. Only permission.sql carries
+# `ON CONFLICT (id) DO NOTHING`; the other 16 seed files are bare INSERTs with
+# hardcoded ids (user.sql, customer.sql, therapist.sql, ...). Re-running against
+# a seeded database fails on duplicate-key violations — loudly rather than
+# silently, but it fails, and with backoffLimit it would retry and keep failing.
+# So the init container decides whether the main container should run at all,
+# and signals that through a shared emptyDir.
+#
+# ORDERING: the Flux Kustomization dependsOn `utro`, which contains the four
+# *-migrate Jobs and has wait:true — so schema migrations have completed before
+# this is even applied. The init container re-checks anyway: Flux ordering does
+# not survive someone re-running this Job by hand.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: utr-staging-bootstrap-seed
+  namespace: default
+  labels:
+    app: utr-staging-bootstrap-seed
+  annotations:
+    # Pod templates are immutable, so a changed image tag cannot update a Job in
+    # place. This makes kustomize-controller delete+recreate it instead, matching
+    # how the *-migrate Jobs are handled.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # Keep a completed Job around for a day so `kubectl logs` still works when
+  # someone asks "did the seed run?". The gate makes re-runs harmless anyway.
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: utr-staging-bootstrap-seed
+    spec:
+      restartPolicy: OnFailure
+
+      volumes:
+        # Carries one bit from the init container to the main container:
+        # does /gate/skip exist or not.
+        - name: gate
+          emptyDir: {}
+
+      initContainers:
+        - name: preconditions
+          # postgres image purely for psql — the bootstrap image is alpine +
+          # tzdata and has no database client.
+          image: postgres:16-alpine
+          volumeMounts:
+            - name: gate
+              mountPath: /gate
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: host
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: password
+            - name: PGDATABASE
+              value: "utro"
+            - name: PGPORT
+              value: "5432"
+            - name: PGSSLMODE
+              value: "require"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              # Fixed id from app/bootstrap/service/bootstrap/a_service.go
+              # (var AdminUserID). Presence of this exact row is the seed marker:
+              # it is the first thing Run() creates and it never changes.
+              ADMIN_ID='2imfnAVjkbfcwEos1LLLztn1vEP'
+
+              echo "==> 1/3 waiting for the database to accept connections"
+              for i in $(seq 1 60); do
+                pg_isready -q && break
+                [ "$i" = 60 ] && { echo "FATAL: database unreachable after 5m"; exit 1; }
+                sleep 5
+              done
+              echo "    ok"
+
+              echo "==> 2/3 waiting for schema migrations"
+              # goose tracks each service separately; a table existing is not
+              # enough, it must have at least one applied version row.
+              for i in $(seq 1 60); do
+                pending=""
+                for t in core_version payment_version notification_version core_event_version; do
+                  n=$(psql -tAc "SELECT count(*) FROM public.$t" 2>/dev/null || echo "")
+                  [ -z "$n" ] || [ "$n" = "0" ] && pending="$pending $t"
+                done
+                [ -z "$pending" ] && break
+                [ "$i" = 60 ] && { echo "FATAL: migrations incomplete after 5m:$pending"; exit 1; }
+                echo "    pending:$pending"
+                sleep 5
+              done
+              for t in core_version payment_version notification_version core_event_version; do
+                echo "    $t = $(psql -tAc "SELECT max(version_id) FROM public.$t")"
+              done
+
+              echo "==> 3/3 has this database already been seeded?"
+              # Queried as the `migrations` role, which OWNS core.user. Aurora
+              # grants BYPASSRLS to nobody, so a non-owner would be filtered by
+              # RLS and see 0 rows — and we would re-seed an already-seeded
+              # database straight into duplicate-key failures.
+              seeded=$(psql -tAc "SELECT count(*) FROM core.\"user\" WHERE id = '$ADMIN_ID'")
+              if [ "$seeded" = "0" ]; then
+                echo "    admin user absent -> SEED"
+              else
+                echo "    admin user present -> already bootstrapped, SKIP"
+                touch /gate/skip
+              fi
+
+      containers:
+        - name: bootstrap
+          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.4 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
+          volumeMounts:
+            - name: gate
+              mountPath: /gate
+          # Overrides the image ENTRYPOINT (`/bin/sh -c "/app/${APP_NAME}"`) so
+          # the gate is honoured. APP_NAME is baked into the image by
+          # docker/Dockerfile, so the binary path stays correct if it is ever
+          # renamed.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if [ -f /gate/skip ]; then
+                echo "database already bootstrapped; nothing to do"
+                exit 0
+              fi
+              echo "seeding test data..."
+              exec "/app/${APP_NAME}"
+          env:
+            # THE important one. false = run Bootstrap.Run() once and exit.
+            # Setting this to true would turn the Job into a server that seeds
+            # nothing and never terminates.
+            - name: ENABLE_DEV_API
+              value: "false"
+
+            # Long-lived auth sessions for the Cypress suite. Off: this seeds a
+            # usable staging environment, not an E2E fixture.
+            - name: SEED_E2E_SESSIONS
+              value: "false"
+
+            - name: TIMEZONE
+              value: "Europe/Warsaw"
+            - name: LOG_LEVEL
+              value: "debug"
+            - name: SERVICE_NAME
+              value: "rpg-bootstrap-seed"
+            - name: SERVICE_ENV
+              value: "staging"
+            - name: SERVICE_VERSION
+              value: "v0.0.4" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
+
+            # Tracing off: there is no otel-collector in this cluster, and with
+            # it enabled the Job's logs are ~99% "failed to upload metrics",
+            # which is exactly what made the StatefulSet's logs unreadable.
+            - name: TR_ENABLED
+              value: "false"
+            - name: DB_TRACE
+              value: "false"
+
+            # Connects as `migrations`, which owns the core tables. Required:
+            # the seed writes to RLS-protected tables and Aurora has no
+            # BYPASSRLS, so only the owner can insert them.
+            - name: DB_SSL
+              value: "true"
+            - name: DB_NAME
+              value: "utro"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: host
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: username
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: db-migrations
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

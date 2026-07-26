@@ -16,8 +16,6 @@ resources:
   - notification-service.yaml
   - core-event-migrate-job.yaml
   - core-event-statefulset.yaml
-  - bootstrap-statefulset.yaml
-  - bootstrap-service.yaml
   - gateway-statefulset.yaml
   - gateway-service.yaml
   - ui-statefulset.yaml
