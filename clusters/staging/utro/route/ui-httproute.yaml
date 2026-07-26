@@ -1,0 +1,76 @@
+# Public routing for the Next.js UI.
+#
+# ONLY the UI is exposed. The browser calls /api/rpc/* on this same origin and
+# Next.js proxies server-side to the gateway via BFF_URL (see
+# app/ui/src/api-proxy.tsx) — so gateway, core, payment, notification, bootstrap
+# and core-event stay ClusterIP and unreachable from outside the cluster. Do not
+# add a second route pointing at a backend service.
+#
+# Access is fully public; the application's own auth is the gate.
+#
+# The HTTPRoute lives here with the app while the Gateway lives in the
+# nginx-gateway namespace: the platform owns the listener and the TLS, the app
+# team owns its own routing. Attaching across namespaces is allowed by the
+# Gateway's allowedRoutes.namespaces.from: All. No ReferenceGrant is needed —
+# that is only required for cross-namespace backendRefs, and this backend is
+# local.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: utr-staging-ui
+  namespace: default
+  labels:
+    app: utr-staging-ui
+spec:
+  parentRefs:
+    - name: utro
+      namespace: nginx-gateway
+      # Bind to the HTTPS listener specifically. Without sectionName the route
+      # would attach to BOTH listeners, and port 80 would serve the app in the
+      # clear instead of redirecting.
+      sectionName: https
+  hostnames:
+    - utro-staging.inspi.cloud
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: utr-staging-ui
+          port: 3000
+      # NO `timeouts:` block, deliberately. rules[].timeouts is standard-channel
+      # Gateway API, but NGF 2.6.7 does not implement it — the field is rejected
+      # as unsupported (internal/controller/state/graph/httproute.go forbids
+      # rule.Timeouts) and the route would carry a permanent UnsupportedField
+      # warning condition while the values silently did nothing. The effective
+      # proxy timeout is nginx's 60s default; if a UI->gateway RPC ever exceeds
+      # that, the fix is an NGF upgrade that supports timeouts, not this field.
+---
+# HTTP -> HTTPS redirect. Gateway API has no global "ssl-redirect" switch the way
+# ingress-nginx did; the redirect is an explicit route with a filter, attached to
+# the :80 listener. More verbose, but it is visible in the API rather than hidden
+# in a controller-wide ConfigMap.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: utr-staging-ui-https-redirect
+  namespace: default
+  labels:
+    app: utr-staging-ui
+spec:
+  parentRefs:
+    - name: utro
+      namespace: nginx-gateway
+      sectionName: http
+  hostnames:
+    - utro-staging.inspi.cloud
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            # 301 permanent. Browsers cache this aggressively — if you ever need
+            # to serve plain HTTP here again, expect to fight the cache.
+            statusCode: 301

@@ -1,0 +1,12 @@
+# OCI registry, unlike the HTTP repos used by ESO/cert-manager — NGF publishes
+# charts to GHCR only. The url is the registry PATH, without the chart name;
+# the chart name goes in the HelmRelease.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: nginx-gateway-fabric
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 1h
+  url: oci://ghcr.io/nginx/charts

@@ -1,0 +1,31 @@
+# The Gateway itself — the cluster's public entrypoint. Split from the
+# nginx-gateway controller Kustomization so the controller can install and be
+# healthy even while certificate issuance is still being sorted out.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gateway
+  namespace: flux-system
+spec:
+  dependsOn:
+    # GatewayClass "nginx" must exist and its controller must be running, or the
+    # Gateway is accepted by nothing and never provisions a data plane.
+    - name: nginx-gateway
+    # ClusterIssuer must exist before the cert-manager.io/cluster-issuer
+    # annotation is honoured, otherwise the Certificate is created referencing a
+    # missing issuer and sits in a permanent error.
+    - name: cert-manager-resources
+  interval: 10m
+  path: ./clusters/staging/nginx-gateway/gateway
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # CAUTION: wait: true does NOT gate on the Gateway becoming Programmed —
+  # kstatus has no rule for Gateway, so it reads Current as soon as the object
+  # exists. This goes green while the NLB is still provisioning (or failing to).
+  # Verify by hand:
+  #   kubectl -n nginx-gateway get gateway utro     # PROGRAMMED=True
+  #   kubectl -n nginx-gateway describe svc         # SyncLoadBalancerFailed events
+  wait: true
+  timeout: 10m

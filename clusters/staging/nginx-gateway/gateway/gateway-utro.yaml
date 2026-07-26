@@ -1,0 +1,58 @@
+# The cluster's public entrypoint.
+#
+# The Gateway lives in the infra namespace and the HTTPRoute lives with the app
+# in `default` — that split is the whole point of Gateway API. The platform owns
+# the listener, the TLS and the load balancer; the application team owns its own
+# routing and cannot accidentally change any of the above.
+#
+# Cross-namespace attachment works because of allowedRoutes below. Note this is
+# a parentRef, not a backendRef, so no ReferenceGrant is required (those are only
+# needed for cross-namespace BACKENDS).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: utro
+  namespace: nginx-gateway
+  annotations:
+    # cert-manager's Gateway shim watches this and creates a Certificate for the
+    # listener hostnames, writing the result to the certificateRefs Secret below
+    # — in THIS namespace, not the route's.
+    #
+    # STEP 1 is letsencrypt-staging: untrusted root (browsers warn) but
+    # effectively unlimited rate limits, which is what you want while proving out
+    # the DNS-01 solver, the token scopes and propagation.
+    # STEP 2, in a separate commit once the Certificate is Ready, is to change
+    # this to letsencrypt-prod. cert-manager notices the issuerRef change and
+    # re-issues on its own — do NOT delete the Secret by hand.
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  gatewayClassName: nginx
+  listeners:
+    # Port 80 exists only to redirect. The redirect itself is an HTTPRoute with a
+    # RequestRedirect filter (see utro/route/) — Gateway API has no equivalent of
+    # nginx's global ssl-redirect, it is expressed as an explicit route rule.
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: utro-staging.inspi.cloud
+      allowedRoutes:
+        namespaces:
+          from: All
+
+    - name: https
+      protocol: HTTPS
+      port: 443
+      # hostname is REQUIRED for the cert-manager shim — it derives the
+      # certificate's DNS names from it, and an empty hostname is an error.
+      hostname: utro-staging.inspi.cloud
+      tls:
+        # Must be Terminate for cert-manager to act on this listener.
+        mode: Terminate
+        certificateRefs:
+          # Created by cert-manager in the nginx-gateway namespace. It does not
+          # exist yet on first apply — nginx serves its self-signed default until
+          # DNS-01 completes (typically 60-120s).
+          - name: utro-staging-tls
+      allowedRoutes:
+        namespaces:
+          from: All

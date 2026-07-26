@@ -1,0 +1,25 @@
+# The utro UI's HTTPRoute — the single point where the app and the ingress stack
+# meet, and therefore the ONLY thing that carries dependencies on both.
+#
+# Kept out of the `utro` Kustomization on purpose: if the routes lived alongside
+# the StatefulSets, then a load balancer that failed to provision or an ACME
+# endpoint having a bad day would make the entire application undeployable.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: utro-route
+  namespace: flux-system
+spec:
+  dependsOn:
+    # The Gateway must be Programmed before a route can attach to it.
+    - name: gateway
+    # Service utr-staging-ui must exist, or nginx resolves the backendRef to
+    # nothing and serves 503s for no visible reason.
+    - name: utro
+  interval: 10m
+  path: ./clusters/staging/utro/route
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true

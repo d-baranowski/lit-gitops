@@ -1,0 +1,149 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nginx-gateway-fabric
+  namespace: nginx-gateway
+spec:
+  releaseName: nginx-gateway-fabric
+  targetNamespace: nginx-gateway
+  interval: 10m
+  # Note: helm does NOT block on the NLB here — the chart's own Service is the
+  # ClusterIP control-plane one; the LoadBalancer Service is created later, per
+  # Gateway, by the NGF provisioner.
+  timeout: 10m
+  chart:
+    spec:
+      chart: nginx-gateway-fabric
+      version: 2.6.7
+      sourceRef:
+        kind: HelmRepository
+        name: nginx-gateway-fabric
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    nginxGateway:
+      # Control plane: reconciles Gateway/HTTPRoute and provisions an nginx
+      # Deployment per Gateway. Not on the data path, so one replica is fine —
+      # if it dies, existing traffic keeps flowing, only config updates stop.
+      replicas: 1
+      gatewayClassName: nginx
+
+    nginx:
+      kind: deployment
+
+      # --- Availability ---------------------------------------------------
+      # The chart default is 1. With externalTrafficPolicy: Local, only nodes
+      # running a data plane pod are healthy NLB targets — one replica means one
+      # of the two AZs has zero healthy targets by construction.
+      replicas: 2
+
+      pod:
+        # The labelSelector below MUST match the DATA PLANE pods, which NGF
+        # provisions at runtime — not the control plane. NGF labels them
+        # (internal/framework/controller/labels.go):
+        #   app.kubernetes.io/name            = <generated resource name>
+        #   gateway.networking.k8s.io/gateway-name = <Gateway name>
+        #
+        # So `app.kubernetes.io/name: nginx-gateway-fabric` — the obvious guess,
+        # and what the control plane Deployment carries — would match ZERO data
+        # plane pods here and the constraint would silently do nothing. Selecting
+        # on the gateway-name label is stable and cannot drift.
+        #
+        # This NginxProxy is global to every Gateway this NGF instance manages.
+        # With one Gateway that is exactly right; a second Gateway would need its
+        # own NginxProxy referenced from spec.infrastructure.parametersRef, since
+        # it would otherwise inherit a selector naming someone else's pods.
+        topologySpreadConstraints:
+          # HARD guarantee of one replica per AZ.
+          #
+          # DoNotSchedule is safe despite node_group_min_size: 1. If the cluster
+          # ever scales down to a single AZ there is only one topology domain, so
+          # the skew is 0 and both pods schedule normally. The constraint only
+          # bites when two AZs have nodes — exactly when you want it to.
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: DoNotSchedule
+            # Scope the skew calculation to the current ReplicaSet. Without this,
+            # old and new pods are both counted during a rolling update and
+            # DoNotSchedule deadlocks the rollout. Stable since k8s 1.32; this
+            # cluster is 1.34.
+            matchLabelKeys:
+              - pod-template-hash
+            labelSelector:
+              matchLabels:
+                gateway.networking.k8s.io/gateway-name: utro
+          # Soft secondary spread across nodes within a zone.
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            matchLabelKeys:
+              - pod-template-hash
+            labelSelector:
+              matchLabels:
+                gateway.networking.k8s.io/gateway-name: utro
+
+      # --- Service / AWS load balancer ------------------------------------
+      service:
+        type: LoadBalancer
+        # Chart default, restated because it is load-bearing: kube-proxy does not
+        # SNAT, so nginx sees the real client IP. The cost is that the NLB
+        # health-checks nodes on healthCheckNodePort and only nodes running a
+        # data plane pod become healthy targets — which is the behaviour the
+        # topology spread above exists to guarantee.
+        externalTrafficPolicy: Local
+        annotations:
+          # NLB rather than the CCM's default Classic ELB. We terminate TLS at
+          # nginx (the cert lives in a Secret), so we need pure L4 pass-through:
+          # NLB is cheaper, provisions faster, and preserves the client source IP
+          # natively with instance targets, which a CLB in TCP mode cannot do
+          # without PROXY protocol.
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+          # NLB cross-zone defaults to OFF (and is billed, unlike ALB). Belt and
+          # braces with the topology spread: the spread fixes steady state, this
+          # covers the windows the scheduler cannot — rolling updates, node
+          # drain, a node going NotReady. Inter-AZ transfer on staging is cents.
+          service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+          # Faster failover than the 30s default. The in-tree CCM NLB path only
+          # accepts 10 or 30 here; any other value is rejected outright.
+          service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
+          service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+          service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+
+          # Match the Terraform default_tags so this shows up correctly in Cost
+          # Explorer next to the rest of the staging stack. It is invisible to
+          # Terraform, so this is the only way it gets attributed.
+          service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=learn-it-devops,Environment=staging,ManagedBy=flux,Component=ingress"
+
+          # DELIBERATELY ABSENT — all AWS Load Balancer Controller annotations,
+          # which is NOT installed here. The CCM ignores them silently:
+          #   aws-load-balancer-type: "external"  -> Service stuck <pending>
+          #                                          forever with NO error event.
+          #                                          This is what most post-2024
+          #                                          tutorials tell you to write.
+          #   nlb-target-type: ip                 -> ignored; you get instance
+          #                                          targets regardless.
+          #   aws-load-balancer-scheme            -> ignored. internet-facing is
+          #                                          the CCM default, obtained by
+          #                                          NOT setting
+          #                                          aws-load-balancer-internal.
+          #   aws-load-balancer-subnets           -> ignored; subnet selection is
+          #                                          by tag
+          #                                          (kubernetes.io/role/elb=1).
+
+      container:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            # Memory only. A CPU limit on a latency-sensitive L7 proxy causes CFS
+            # throttling under burst; the request already guarantees the floor.
+            memory: 512Mi
