@@ -135,6 +135,12 @@ spec:
     nodeExporter:
       enabled: true
     prometheus-node-exporter:
+      # Without this the DaemonSet cannot place a pod on a node that is already
+      # at the 17-pod VPC CNI ceiling: at priority 0 it has nothing to preempt,
+      # and Cluster Autoscaler ignores unschedulable DaemonSet pods. That is what
+      # stalled the first install of this release for the full 15m timeout.
+      # See ../priorityclass-node-agent.yaml.
+      priorityClassName: lit-node-agent
       hostRootFsMount:
         enabled: true
       resources:

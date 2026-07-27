@@ -15,6 +15,10 @@ kind: Kustomization
 # reconciled by a separate Flux Kustomization with dependsOn: observability.
 resources:
   - namespace-observability.yaml
+  # Must exist before the DaemonSets reference it. Safe here: Flux applies these
+  # plain manifests first, and the helm-controller installs the releases
+  # afterwards on its own reconcile.
+  - priorityclass-node-agent.yaml
 
   # Helm repositories (all in flux-system, see above)
   - helmrepo-prometheus-community.yaml

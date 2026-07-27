@@ -1,0 +1,50 @@
+# Priority class for per-node observability agents (node-exporter, Alloy).
+#
+# WHY THIS EXISTS
+#
+# t3.medium allows 17 pods per node with the default VPC CNI. When a node is
+# already at that ceiling, a DaemonSet pod for it simply cannot be placed:
+#
+#   0/4 nodes are available: 1 Too many pods,
+#   3 node(s) didn't satisfy plugin(s) [NodeAffinity].
+#   preemption: 1 No preemption victims found for incoming pod
+#
+# The NodeAffinity misses are expected — a DaemonSet pod is pinned to one node,
+# so the other three can never satisfy it. The problem is the fourth. And
+# Cluster Autoscaler cannot rescue it: it deliberately ignores unschedulable
+# DaemonSet pods when sizing the group, because a new node would arrive with its
+# own copy of the DaemonSet and still leave this node full. So it waits forever —
+# which is exactly what stalled the kube-prometheus-stack install at its 15m
+# timeout with `DaemonSet/...-node-exporter status: 'InProgress'`.
+#
+# "No preemption victims found" is the other half: at priority 0 the pod ranks
+# equal to every application pod, and equal priority cannot preempt.
+#
+# A priority above application workloads fixes both. The scheduler evicts one
+# app pod to free a slot, and — this is the useful part — that evicted pod IS a
+# normal pod, so if the cluster genuinely has no room, Cluster Autoscaler now
+# sees an unschedulable pod it CAN act on and adds a node. The deadlock becomes
+# a scale-up.
+#
+# WHY NOT system-node-critical
+#
+# It would work, and it is what the VPC CNI and kube-proxy use. But it means
+# "the node does not function without this", and that is not true of metrics and
+# log shipping — losing them degrades visibility, not the node. Ranking
+# monitoring alongside the CNI would let it preempt genuinely critical
+# infrastructure on a full node. This sits deliberately in between: above
+# applications, below anything the cluster needs to run.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: lit-node-agent
+# Application pods are 0; system-cluster-critical is 2000000000 and
+# system-node-critical 2000001000. This is comfortably above the former and far
+# below the latter, leaving room for other tiers on either side.
+value: 100000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: >-
+  Per-node observability agents (node-exporter, Alloy). Outranks application
+  workloads so a full node cannot leave a node blind, but stays below
+  system-cluster-critical so it never preempts cluster infrastructure.

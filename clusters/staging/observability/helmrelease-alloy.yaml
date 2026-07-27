@@ -29,6 +29,12 @@ spec:
       # the cluster scales.
       type: daemonset
 
+      # Same reason as node-exporter: on a node already at the 17-pod ceiling a
+      # priority-0 DaemonSet pod can neither schedule nor preempt, and Cluster
+      # Autoscaler will not scale up for it. A node whose Alloy never lands ships
+      # no logs at all — silently. See ../priorityclass-node-agent.yaml.
+      priorityClassName: lit-node-agent
+
     alloy:
       # Alloy defaults to also exposing a clustering/UI service; neither is
       # needed for a plain log shipper and the UI would be another thing to

@@ -144,6 +144,34 @@ spec:
               max_size is what an unexpected bill looks like in advance.
             runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
 
+        - alert: DaemonSetNotFullyScheduled
+          # The specific deadlock that stalled the first install of this stack.
+          # A node at the 17-pod ceiling cannot accept a new DaemonSet pod, and
+          # nothing resolves it on its own: Cluster Autoscaler ignores
+          # unschedulable DaemonSet pods when sizing the group. PodPendingTooLong
+          # does not reliably catch it either — on a busy cluster a single
+          # perpetually-Pending DaemonSet pod is easy to lose among churn.
+          #
+          # It matters because the failure is silent by nature: a node missing
+          # its node-exporter or Alloy just contributes no metrics and no logs.
+          # The dashboards show one fewer node rather than an error.
+          expr: |
+            kube_daemonset_status_number_ready
+              < kube_daemonset_status_desired_number_scheduled
+          for: 15m
+          labels:
+            severity: warning
+            risk: "3"
+          annotations:
+            summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is not fully scheduled"
+            description: >-
+              At least one node has no pod from this DaemonSet. If the pod is Pending with
+              "Too many pods", the node is at its VPC CNI ceiling — Cluster Autoscaler will
+              NOT fix this. Give the DaemonSet a priority class so it can preempt (see
+              observability/priorityclass-node-agent.yaml), or raise the ceiling with prefix
+              delegation.
+            runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
+
         - alert: PodDensityCeilingNear
           # The VPC CNI caps pods per node by ENI/IP capacity, well below what CPU
           # and memory would allow. Nothing else in the stack surfaces that limit.
