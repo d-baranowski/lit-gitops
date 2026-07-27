@@ -1,52 +1,57 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: utr-staging-notification
+  name: utr-staging-core
   namespace: default
   labels:
-    app: utr-staging-notification
+    app: utr-staging-core
 spec:
-  serviceName: utr-staging-notification
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: utr-staging-notification
+      app: utr-staging-core
   template:
     metadata:
       labels:
-        app: utr-staging-notification
+        app: utr-staging-core
     spec:
       containers:
-      - name: notification
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-notification:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-notification"}
+      - name: core
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-core"}
         ports:
-        - containerPort: 9002
+        - containerPort: 9102
           name: api
         - containerPort: 18007
           name: health
         env:
         - name: TIMEZONE
           value: "Europe/Warsaw"
+        - name: PAYMENT_SERVICE_URL
+          value: "http://utr-staging-payment.default.svc.cluster.local:9102"
+        - name: PAYMENT_SERVICE_CLIENT_TIMEOUT_MS
+          value: "10000"
         - name: HEALTH_PORT
           value: "18007"
         - name: API_PORT
-          value: "9002"
+          value: "9102"
         - name: LOG_LEVEL
           value: "debug"
+        - name: RPG_PERMISSIONS_FLAG
+          value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-notification:tag"}
+          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
         - name: SERVICE_NAME
-          value: "rpg.notification"
+          value: "rpg.core"
         - name: SERVICE_ENV
           value: "staging"
-        - name: ENABLE_DEV_API
-          value: "true"
         - name: TR_ENABLED
           value: "true"
         - name: TR_ENDPOINT
           value: "otel-collector.observability.svc.cluster.local:4318"
         - name: TR_HTTPS
           value: "false"
+        - name: ENABLE_DEV_API
+          value: "true"
         - name: DB_TRACE
           value: "true"
         - name: DB_SSL
@@ -70,35 +75,6 @@ spec:
             secretKeyRef:
               name: db-app
               key: password
-        - name: EMAIL_FROM_ADDRESS
-          value: "kontakt@inspiration-particle.com"
-        - name: EMAIL_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: resend
-              key: api_key
-        - name: EMAIL_WEBHOOK_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: resend
-              key: webhook_secret
-        - name: PUBLIC_WEBHOOK_URL
-          value: "https://utro-test.inspi.cloud/webhook"
-        - name: ACCOUNT_SID
-          valueFrom:
-            secretKeyRef:
-              name: twilio
-              key: account_sid
-        - name: AUTH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: twilio
-              key: auth_token
-        - name: FROM_PHONE
-          valueFrom:
-            secretKeyRef:
-              name: twilio
-              key: from_phone
         livenessProbe:
           httpGet:
             path: /live

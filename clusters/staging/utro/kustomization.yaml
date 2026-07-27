@@ -6,19 +6,19 @@ resources:
   - externalsecrets-app.yaml
   # Workloads (namespace: default)
   - core-migrate-job.yaml
-  - core-statefulset.yaml
+  - core-deployment.yaml
   - core-service.yaml
   - payment-migrate-job.yaml
-  - payment-statefulset.yaml
+  - payment-deployment.yaml
   - payment-service.yaml
   - notification-migrate-job.yaml
-  - notification-statefulset.yaml
+  - notification-deployment.yaml
   - notification-service.yaml
   - core-event-migrate-job.yaml
-  - core-event-statefulset.yaml
-  - gateway-statefulset.yaml
+  - core-event-deployment.yaml
+  - gateway-deployment.yaml
   - gateway-service.yaml
-  - ui-statefulset.yaml
+  - ui-deployment.yaml
   - ui-service.yaml
   # Flux image automation (namespace: flux-system)
   - image-repositories.yaml

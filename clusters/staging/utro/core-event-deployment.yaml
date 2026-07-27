@@ -12,14 +12,25 @@
 #     core tables return rows. (core_event_grants only grants SELECT, which RLS
 #     alone filters to zero rows without BYPASSRLS.)
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: utr-staging-core-event
   namespace: default
   labels:
     app: utr-staging-core-event
 spec:
-  serviceName: utr-staging-core-event
+  # Recreate, NOT the default RollingUpdate. This pod owns the single logical
+  # replication slot core_event_slot, and Postgres allows only one active
+  # consumer per slot. A Deployment's default maxSurge (25%, rounded UP to 1 for
+  # a single replica) would start the new pod while the old one still holds the
+  # slot, and the new one would fail with "replication slot is active".
+  #
+  # The StatefulSet this replaced got the same behaviour for free: it terminates
+  # the old pod before creating its replacement. Recreate restores that. The
+  # cost is a short gap in CDC consumption, which is fine — the slot retains WAL
+  # and the consumer resumes from where it left off.
+  strategy:
+    type: Recreate
   # Single replica: owns one logical replication slot; a second would contend.
   replicas: 1
   selector:

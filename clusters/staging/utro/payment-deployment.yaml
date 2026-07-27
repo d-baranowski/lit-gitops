@@ -1,26 +1,25 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: utr-staging-gateway
+  name: utr-staging-payment
   namespace: default
   labels:
-    app: utr-staging-gateway
+    app: utr-staging-payment
 spec:
-  serviceName: utr-staging-gateway
   replicas: 2
   selector:
     matchLabels:
-      app: utr-staging-gateway
+      app: utr-staging-payment
   template:
     metadata:
       labels:
-        app: utr-staging-gateway
+        app: utr-staging-payment
     spec:
       containers:
-      - name: gateway
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-gateway:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-gateway"}
+      - name: payment
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-payment"}
         ports:
-        - containerPort: 9999
+        - containerPort: 9102
           name: api
         - containerPort: 18007
           name: health
@@ -30,29 +29,19 @@ spec:
         - name: HEALTH_PORT
           value: "18007"
         - name: API_PORT
-          value: "9999"
-        - name: USER
-          value: "postgres"
+          value: "9102"
         - name: LOG_LEVEL
           value: "debug"
-        - name: PAYMENT_SERVICE
-          value: "utr-staging-payment.default.svc.cluster.local:9102"
-        - name: NOTIFICATION_SERVICE
-          value: "utr-staging-notification.default.svc.cluster.local:9002"
-        - name: CORE_SERVICE
-          value: "utr-staging-core.default.svc.cluster.local:9102"
-        - name: WITH_PERMISSIONS
-          value: "true"
-        - name: ENABLE_PERMISSIONS
-          value: "true"
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
+          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-payment:tag"}
         - name: SERVICE_NAME
-          value: "rpg.gateway"
+          value: "rpg.payment"
         - name: SERVICE_ENV
           value: "staging"
+        - name: PGMQ_ENABLED
+          value: "true"
         - name: TR_ENABLED
           value: "true"
         - name: TR_ENDPOINT
@@ -82,6 +71,21 @@ spec:
             secretKeyRef:
               name: db-app
               key: password
+        - name: STRIPE_PUBLISHABLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: stripe
+              key: publishable_key
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: stripe
+              key: secret_key
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: stripe
+              key: webhook_secret
         livenessProbe:
           httpGet:
             path: /live

@@ -1,12 +1,11 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: utr-staging-ui
   namespace: default
   labels:
     app: utr-staging-ui
 spec:
-  serviceName: utr-staging-ui
   replicas: 2
   selector:
     matchLabels:

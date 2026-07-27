@@ -1,48 +1,55 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: utr-staging-core
+  name: utr-staging-gateway
   namespace: default
   labels:
-    app: utr-staging-core
+    app: utr-staging-gateway
 spec:
-  serviceName: utr-staging-core
   replicas: 2
   selector:
     matchLabels:
-      app: utr-staging-core
+      app: utr-staging-gateway
   template:
     metadata:
       labels:
-        app: utr-staging-core
+        app: utr-staging-gateway
     spec:
       containers:
-      - name: core
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-core"}
+      - name: gateway
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-gateway:v0.0.6 # {"$imagepolicy": "flux-system:utr-staging-gateway"}
         ports:
-        - containerPort: 9102
+        - containerPort: 9999
           name: api
         - containerPort: 18007
           name: health
         env:
         - name: TIMEZONE
           value: "Europe/Warsaw"
-        - name: PAYMENT_SERVICE_URL
-          value: "http://utr-staging-payment.default.svc.cluster.local:9102"
-        - name: PAYMENT_SERVICE_CLIENT_TIMEOUT_MS
-          value: "10000"
         - name: HEALTH_PORT
           value: "18007"
         - name: API_PORT
-          value: "9102"
+          value: "9999"
+        - name: USER
+          value: "postgres"
         - name: LOG_LEVEL
           value: "debug"
+        - name: PAYMENT_SERVICE
+          value: "utr-staging-payment.default.svc.cluster.local:9102"
+        - name: NOTIFICATION_SERVICE
+          value: "utr-staging-notification.default.svc.cluster.local:9002"
+        - name: CORE_SERVICE
+          value: "utr-staging-core.default.svc.cluster.local:9102"
+        - name: WITH_PERMISSIONS
+          value: "true"
+        - name: ENABLE_PERMISSIONS
+          value: "true"
         - name: RPG_PERMISSIONS_FLAG
           value: "true"
         - name: SERVICE_VERSION
-          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
+          value: "v0.0.6" # {"$imagepolicy": "flux-system:utr-staging-gateway:tag"}
         - name: SERVICE_NAME
-          value: "rpg.core"
+          value: "rpg.gateway"
         - name: SERVICE_ENV
           value: "staging"
         - name: TR_ENABLED
@@ -51,8 +58,6 @@ spec:
           value: "otel-collector.observability.svc.cluster.local:4318"
         - name: TR_HTTPS
           value: "false"
-        - name: ENABLE_DEV_API
-          value: "true"
         - name: DB_TRACE
           value: "true"
         - name: DB_SSL
