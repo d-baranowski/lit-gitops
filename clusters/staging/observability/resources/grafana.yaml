@@ -66,9 +66,24 @@ spec:
       url_login: "false"
       jwk_set_url: "https://inspiration-particle.cloudflareaccess.com/cdn-cgi/access/certs"
       cache_ttl: "60m"
-      # A JMESPath expression, not a literal — the single quotes make it a string
-      # literal within the expression, which is how a constant role is spelled.
-      role_attribute_path: "'Admin'"
+      # A JMESPath expression, not a plain value — the inner single quotes make
+      # it a string literal within the expression, which is how a constant role
+      # is spelled.
+      #
+      # GrafanaAdmin, not Admin. `Admin` is only *organisation* admin: full
+      # control of dashboards, datasources, users and alerting within the org,
+      # but no access to Server Admin — no user administration across orgs, no
+      # org management, no server settings or stats page.
+      # `GrafanaAdmin` grants the server-admin flag AND org Admin on top.
+      #
+      # Requires allow_assign_grafana_admin below; without it Grafana silently
+      # downgrades the mapping to org Admin and the Server Admin menu never
+      # appears.
+      #
+      # Safe here because Cloudflare Access is the real gate and its policy
+      # allows exactly one address — anyone who reaches Grafana at all has
+      # already been authorised as that person.
+      role_attribute_path: "'GrafanaAdmin'"
       allow_assign_grafana_admin: "true"
       # expect_claims (issuer + audience) is NOT set here. It contains the Access
       # application's AUD tag, which does not exist until Terraform has applied,
