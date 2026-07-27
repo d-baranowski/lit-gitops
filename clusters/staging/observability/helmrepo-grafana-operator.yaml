@@ -1,0 +1,12 @@
+# grafana-operator publishes only to GHCR as an OCI artifact — it is not in the
+# https://grafana.github.io/helm-charts index, so this needs its own repo with
+# type: oci rather than reusing the `grafana` HelmRepository.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana-operator
+  namespace: flux-system
+spec:
+  interval: 1h
+  type: oci
+  url: oci://ghcr.io/grafana/helm-charts

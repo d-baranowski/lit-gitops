@@ -103,9 +103,26 @@ spec:
     prometheus:
       enabled: true
       servicemonitor:
-        # No Prometheus Operator on this cluster, so the ServiceMonitor CRD does
-        # not exist and enabling this would fail the whole HelmRelease.
-        enabled: false
+        # Enabled now that kube-prometheus-stack provides the Prometheus Operator
+        # and the ServiceMonitor CRD (clusters/staging/observability).
+        #
+        # This is load-bearing, not cosmetic: the RISKS.md §1 and §4 alerts —
+        # certificate expiry, Certificate stuck not-Ready, ACME request failures —
+        # all evaluate against certmanager_* metrics, and those only reach
+        # Prometheus through this ServiceMonitor. With it off the rules still load
+        # and simply never fire, which is indistinguishable from healthy.
+        #
+        # Prometheus discovers it across namespaces because the stack sets
+        # serviceMonitorSelectorNilUsesHelmValues: false and an empty
+        # serviceMonitorNamespaceSelector.
+        #
+        # ORDERING: this HelmRelease will fail if it reconciles before the CRD
+        # exists. cert-manager does not depend on observability (and should not —
+        # DNS-01 issuance must not be coupled to the metrics stack), so on a
+        # from-scratch bootstrap expect this release to fail once and self-heal on
+        # its next 10m interval. On an existing cluster, land the observability
+        # directories first.
+        enabled: true
 
     resources:
       requests:

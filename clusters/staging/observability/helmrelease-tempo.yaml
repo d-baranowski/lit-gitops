@@ -1,0 +1,90 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: tempo
+      version: "1.24.4"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+  values:
+    fullnameOverride: tempo
+
+    # Must match the aws_eks_pod_identity_association for the tempo role in
+    # infrastructure/modules/observability — see the note in helmrelease-loki.yaml.
+    serviceAccount:
+      create: true
+      name: tempo
+
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: gp3
+
+    tempo:
+      retention: 336h # 14 days
+
+      # NOTE: `resources` belongs UNDER `tempo:` in this chart (v1.24.x), not at
+      # the top level — the StatefulSet template reads .Values.tempo.resources.
+      # A top-level `resources:` block is accepted by the schema and silently
+      # ignored, leaving the container with no requests at all: it then schedules
+      # anywhere, counts as BestEffort, and is first to be evicted under memory
+      # pressure. Same shape of trap as this chart's `extraEnvFrom`.
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 1Gi
+
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+
+      # Derives RED metrics and a service graph from spans and remote-writes them
+      # into Prometheus. This is what powers the traces_service_graph_request_*
+      # panels on the utro dashboards — without it those panels are empty even
+      # though traces themselves arrive fine.
+      metricsGenerator:
+        enabled: true
+        remoteWriteUrl: "http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write"
+
+      storage:
+        trace:
+          backend: s3
+          s3:
+            bucket: lit-staging-tempo-traces
+            endpoint: s3.eu-central-1.amazonaws.com
+            region: eu-central-1
+            forcepathstyle: false
+            # No access_key/secret_key: EKS Pod Identity supplies credentials
+            # through the AWS SDK's default provider chain.
+          wal:
+            path: /var/tempo/wal
+          pool:
+            max_workers: 100
+            queue_depth: 10000
+
+      overrides:
+        defaults:
+          metrics_generator:
+            processors:
+              - service-graphs
+              - span-metrics
+
+    serviceMonitor:
+      enabled: true

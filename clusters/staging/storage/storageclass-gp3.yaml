@@ -1,0 +1,52 @@
+# Default StorageClass for the cluster.
+#
+# EKS 1.34 ships no in-tree storage provisioner and the aws-ebs-csi-driver addon
+# installs no StorageClass of its own, so until this exists EVERY PersistentVolume
+# Claim in the cluster stays Pending — with no event that names the real cause.
+#
+# The driver behind it is the aws-ebs-csi-driver addon, enabled in Terraform
+# (modules/eks-cluster, enable_ebs_csi_driver) with its IAM supplied by Pod
+# Identity (modules/ebs-csi). Applying this without that addon gives PVCs that
+# stay Pending on "waiting for a volume to be created by external provisioner".
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    # Nothing else claims the default, and the observability charts are far
+    # easier to keep in step with upstream if their PVCs need no storageClassName.
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+
+# WaitForFirstConsumer, not Immediate. An EBS volume is pinned to one AZ the
+# moment it is created, so binding before the pod is scheduled routinely places
+# the volume in an AZ with no room for the pod — which then never schedules.
+# It matters more than usual here: this cluster spans two AZs and Cluster
+# Autoscaler is free to add capacity in either.
+volumeBindingMode: WaitForFirstConsumer
+
+# Lets a PVC be grown in place. Prometheus outgrowing its volume is the expected
+# way this cluster runs out of disk, and without this the only fix is to delete
+# the PVC and lose the TSDB.
+allowVolumeExpansion: true
+
+# Delete, not Retain. Retain would protect the metrics history from an accidental
+# prune, but these volumes are created by the CSI driver at runtime and so exist
+# in NO Terraform state — exactly the situation that already produces orphaned,
+# still-billing NLBs on teardown (RISKS.md §2). Retain would add four more
+# invisible billable resources to every destroy/re-apply cycle, which this estate
+# runs routinely. Staging telemetry is not worth that; Loki and Tempo keep the
+# durable copy in S3 regardless.
+reclaimPolicy: Delete
+
+parameters:
+  type: gp3
+  # Encrypted with the AWS-managed EBS key (alias/aws/ebs). The KMS grants this
+  # needs are already in the AmazonEBSCSIDriverPolicy attached in modules/ebs-csi.
+  encrypted: "true"
+  # gp3 includes 3000 IOPS / 125 MiBps at no extra charge, and billing only
+  # starts above that. Stating them explicitly documents that this is the free
+  # tier of the volume type rather than an accidental default.
+  iops: "3000"
+  throughput: "125"
+  csi.storage.k8s.io/fstype: ext4

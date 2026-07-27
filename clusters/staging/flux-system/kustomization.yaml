@@ -15,3 +15,7 @@ resources:
 - utro-kustomization.yaml
 - utro-bootstrap-kustomization.yaml
 - utro-route-kustomization.yaml
+- storage-kustomization.yaml
+- observability-kustomization.yaml
+- observability-resources-kustomization.yaml
+- cloudflared-kustomization.yaml

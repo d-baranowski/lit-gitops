@@ -1,0 +1,105 @@
+# The Cloudflare Tunnel connector — Grafana's only route in from the internet.
+#
+# It dials OUT to Cloudflare's edge and holds the connection open; nothing
+# inbound is ever opened, so this needs no LoadBalancer, no public IP, no
+# certificate and no listener on the utro Gateway.
+#
+# The tunnel's routing (hostname -> grafana-service:3000) is configured REMOTELY
+# by Terraform via cloudflare_zero_trust_tunnel_cloudflared_config, which is why
+# there is no config file here: cloudflared fetches its ingress rules from
+# Cloudflare at startup. Changing the origin is a terraform apply, not a cluster
+# change.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: observability
+  labels:
+    app: cloudflared
+spec:
+  # Two connectors, not one. Cloudflare load-balances across all registered
+  # connectors for a tunnel, so this survives a node scale-down — which Cluster
+  # Autoscaler will do routinely on this cluster. With one replica, every
+  # scale-in event is a Grafana outage.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      # Best-effort spread. Soft rather than required: on a two-node cluster a
+      # hard constraint would block rollouts whenever one node is cordoned.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: cloudflared
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          # Pinned to the same version Packer bakes into the Jenkins controller
+          # AMI (packer/jenkins-controller/build.sh), so both tunnels in this
+          # estate move together.
+          image: cloudflare/cloudflared:2026.7.2
+          args:
+            - tunnel
+            # Image tag is the version contract; in-place self-update would make
+            # the running binary differ from what this manifest says.
+            - --no-autoupdate
+            - --metrics
+            - 0.0.0.0:2000
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflared-token
+                  key: token
+          ports:
+            - name: metrics
+              containerPort: 2000
+              protocol: TCP
+          # cloudflared serves /ready on the metrics port, returning 200 only
+          # once it has at least one registered connection to Cloudflare's edge.
+          # That makes it a genuine readiness signal rather than a liveness stub.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

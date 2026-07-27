@@ -1,0 +1,82 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: prometheus
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  datasource:
+    name: prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    # Reflects `fullnameOverride: kps` on the kube-prometheus-stack HelmRelease.
+    # The unoverridden name would be kube-prometheus-stack-prometheus.
+    url: http://kps-prometheus.observability.svc.cluster.local:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "30s"
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: loki
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  datasource:
+    name: loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki.observability.svc.cluster.local:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      # Turns a trace_id in a log line into a clickable link into Tempo. Half of
+      # the logs<->traces correlation; the other half is tracesToLogsV2 below.
+      derivedFields:
+        - name: traceID
+          matcherRegex: "trace_id=(\\w+)"
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: tempo
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  datasource:
+    name: tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    # 3200 is Tempo's HTTP query API. 3100 is Loki's — an easy and silent
+    # mistake, since a wrong port here surfaces only as an empty trace search.
+    url: http://tempo.observability.svc.cluster.local:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1h"
+        spanEndTimeShift: "1h"
+        # Maps the OTel resource attribute service.name onto the Loki label
+        # service_name, which Alloy sets from the pod's `app` label.
+        tags:
+          - key: service.name
+            value: service_name
+        filterByTraceID: true
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true

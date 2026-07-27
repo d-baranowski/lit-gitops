@@ -1,0 +1,133 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: loki
+      version: "6.40.0"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  install:
+    timeout: 15m
+  upgrade:
+    timeout: 15m
+  values:
+    # One pod holding every Loki component. The distributed modes exist to scale
+    # ingest across many nodes; on a two-node cluster they would just multiply
+    # the pod count against a 17-pods-per-node ceiling.
+    deploymentMode: SingleBinary
+
+    # No static AWS credentials anywhere in this file — unlike the reference
+    # stack this was ported from, which injected an IAM user's keys from a
+    # Secret. Credentials come from EKS Pod Identity: the agent injects
+    # AWS_CONTAINER_CREDENTIALS_FULL_URI into the pod and Loki's AWS SDK picks it
+    # up through the default provider chain.
+    #
+    # The catch is that this binds by SERVICE ACCOUNT NAME. `loki` below must
+    # match the aws_eks_pod_identity_association in
+    # infrastructure/modules/observability. If they drift, the SDK falls through
+    # to anonymous and every write 403s — visible only in the pod's logs.
+    serviceAccount:
+      create: true
+      name: loki
+
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+
+      storage:
+        type: s3
+        bucketNames:
+          chunks: lit-staging-loki-chunks
+          ruler: lit-staging-loki-chunks
+          admin: lit-staging-loki-chunks
+        s3:
+          region: eu-central-1
+          s3ForcePathStyle: false
+          insecure: false
+
+      schemaConfig:
+        configs:
+          - from: "2024-04-01"
+            store: tsdb
+            object_store: s3
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+
+      limits_config:
+        retention_period: 336h # 14 days
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+        max_query_length: 721h
+
+      compactor:
+        # The compactor is what actually enforces retention_period. Without this
+        # the setting is advisory and the S3 lifecycle rule (21d, set in
+        # Terraform) becomes the only thing deleting anything.
+        retention_enabled: true
+        delete_request_store: s3
+
+      ruler:
+        enable_api: true
+
+    singleBinary:
+      replicas: 1
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: gp3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 1Gi
+
+    # Distributed-mode components, off in SingleBinary.
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+
+    # The memcached tiers. BOTH DEFAULT TO ENABLED and their default requests are
+    # wildly out of scale for this cluster: chunks-cache asks for 9830Mi and
+    # results-cache 1229Mi. A t3.medium has 4Gi total, so chunks-cache is
+    # unschedulable at ANY node count — it would sit Pending forever and hold the
+    # HelmRelease (and therefore the whole observability Kustomization) not-Ready.
+    #
+    # They are pure query-latency optimisations for large deployments. A
+    # single-binary Loki serving one small cluster does not need them.
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+
+    # A DaemonSet that writes synthetic log lines and asserts they come back, to
+    # measure Loki's own health. Useful at scale; here it is one more pod per node
+    # against a 17-pod ceiling.
+    lokiCanary:
+      enabled: false
+
+    # Helm test hooks that query the canary above. Nothing runs them in GitOps.
+    test:
+      enabled: false
+
+    # The gateway is an nginx reverse proxy that fans reads/writes across
+    # distributed components. In SingleBinary there is nothing to fan out to.
+    gateway:
+      enabled: false
+
+    serviceMonitor:
+      enabled: true
+      labels: {}

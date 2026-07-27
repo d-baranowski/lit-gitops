@@ -1,0 +1,65 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Every resource here already declares metadata.namespace explicitly; the
+# top-level kustomize namespace is omitted to stay consistent with ../kustomization.yaml.
+
+# This directory holds CRs whose CRDs are installed by the HelmReleases in the
+# parent directory — Grafana/GrafanaDatasource/GrafanaDashboard/GrafanaFolder
+# from grafana-operator, and Probe/PrometheusRule from kube-prometheus-stack.
+# It is therefore reconciled by a SEPARATE Flux Kustomization
+# (flux-system/observability-resources-kustomization.yaml) with
+# dependsOn: observability, so the CRDs always exist before the CRs are applied.
+resources:
+  # Grafana itself + the ExternalSecret carrying the Cloudflare Access AUD it
+  # needs for JWT auto-login.
+  - externalsecret-grafana-access-jwt.yaml
+  - grafana.yaml
+  - grafana-datasources.yaml
+  # Dashboards (JSON supplied by the configMapGenerator below)
+  - grafana-dashboards.yaml
+  - infrastructure-dashboards.yaml
+  # Synthetic probe of the public endpoint + the alerts derived from RISKS.md
+  - probe-public-endpoint.yaml
+  - prometheusrule-lit-risks.yaml
+
+configMapGenerator:
+  - name: utro-dashboard-services
+    namespace: observability
+    files:
+      - utro-services.json
+  - name: utro-dashboard-traces
+    namespace: observability
+    files:
+      - utro-traces.json
+  - name: utro-dashboard-db-pool
+    namespace: observability
+    files:
+      - utro-db-pool.json
+  - name: utro-dashboard-db-queries
+    namespace: observability
+    files:
+      - utro-db-queries.json
+  - name: utro-dashboard-error-logs
+    namespace: observability
+    files:
+      - utro-error-logs.json
+  # Vendored community dashboards — see infrastructure-dashboards.yaml for why
+  # the JSON is committed rather than imported via grafanaCom.id.
+  - name: infra-dashboard-node-exporter-full
+    namespace: observability
+    files:
+      - node-exporter-full.json
+  - name: infra-dashboard-k8s-views-global
+    namespace: observability
+    files:
+      - k8s-views-global.json
+  - name: infra-dashboard-k8s-views-nodes
+    namespace: observability
+    files:
+      - k8s-views-nodes.json
+
+generatorOptions:
+  # Stable ConfigMap names — the GrafanaDashboard CRs reference them by name, so
+  # a content hash suffix would break every reference on each edit.
+  disableNameSuffixHash: true

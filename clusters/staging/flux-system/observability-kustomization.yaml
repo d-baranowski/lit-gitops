@@ -1,0 +1,36 @@
+# The observability stack's Helm releases: Prometheus + Alertmanager,
+# Loki + Alloy, Tempo, the OTel collector, grafana-operator and blackbox-exporter.
+#
+# Split from ./resources for the usual operator-vs-CRs reason, same as
+# cert-manager and external-secrets-operator: this directory installs the CRDs,
+# that one applies CRs that need them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: observability
+  namespace: flux-system
+spec:
+  dependsOn:
+    # The gp3 default StorageClass. Prometheus, Alertmanager, Loki, Tempo and
+    # Grafana all claim volumes; without it every one of them sits Pending and
+    # this Kustomization times out with no useful error.
+    - name: storage
+    # The aws-secretsmanager ClusterSecretStore, needed by the ExternalSecrets in
+    # ./resources and by cloudflared. Depended on here rather than only there so
+    # the whole stack fails fast on a missing store.
+    - name: external-secrets-resources
+  interval: 10m
+  path: ./clusters/staging/observability
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Gates on every HelmRelease being Ready, which via helm --wait means the
+  # Prometheus Operator CRDs (Probe, PrometheusRule, ServiceMonitor) and the
+  # grafana-operator CRDs are all installed before ./resources is applied.
+  wait: true
+  # Generous: kube-prometheus-stack alone installs ~10 CRDs and waits on the
+  # Prometheus StatefulSet, and on this cluster that usually triggers a Cluster
+  # Autoscaler scale-up first — a new node has to be provisioned and joined
+  # before the pods can even schedule.
+  timeout: 20m

@@ -1,0 +1,88 @@
+# Dashboards are owned by the grafana-operator and provisioned into the
+# `Utro` folder. Each dashboard references its JSON via a ConfigMap so the
+# JSONs stay readable as files alongside this manifest.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: utro-folder
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  title: Utro
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: utro-services
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: utro-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: utro-dashboard-services
+    key: utro-services.json
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: utro-traces
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: utro-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: utro-dashboard-traces
+    key: utro-traces.json
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: utro-db-pool
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: utro-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: utro-dashboard-db-pool
+    key: utro-db-pool.json
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: utro-db-queries
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: utro-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: utro-dashboard-db-queries
+    key: utro-db-queries.json
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: utro-error-logs
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: utro-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: utro-dashboard-error-logs
+    key: utro-error-logs.json

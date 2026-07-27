@@ -1,0 +1,29 @@
+# Grafana + its datasources and dashboards, the blackbox Probe, and the
+# PrometheusRules derived from infrastructure/RISKS.md.
+#
+# Every kind here comes from a CRD installed by the `observability` Kustomization:
+# Grafana/GrafanaDatasource/GrafanaDashboard/GrafanaFolder from grafana-operator,
+# Probe/PrometheusRule from kube-prometheus-stack. Applying them in the same
+# build would fail with "no matches for kind".
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: observability-resources
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: observability
+  interval: 10m
+  path: ./clusters/staging/observability/resources
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # CAUTION, same class of trap as cert-manager-resources: kstatus has no rule
+  # for the grafana.integreatly.org kinds, so a Grafana or GrafanaDashboard CR
+  # whose observedGeneration matches reads as Current regardless of whether the
+  # operator actually reconciled it. This going green does NOT prove Grafana is
+  # up or that the dashboards loaded. Confirm by hand:
+  #   kubectl -n observability get grafana,grafanadashboard,grafanadatasource
+  wait: true
+  timeout: 10m

@@ -1,0 +1,25 @@
+# The cluster's default StorageClass.
+#
+# Separate from observability/ (rather than a file inside it) because it is
+# cluster-wide infrastructure that anything with a PVC depends on, and because
+# ordering matters: a PVC created before its StorageClass exists binds to
+# nothing and stays Pending even after the class appears.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: storage
+  namespace: flux-system
+spec:
+  # No dependsOn. The StorageClass is a plain built-in kind and needs no
+  # operator — but note it is inert until the aws-ebs-csi-driver addon exists,
+  # which is Terraform's job (modules/eks-cluster, enable_ebs_csi_driver).
+  # Applying this without the addon gives PVCs stuck on "waiting for a volume to
+  # be created by external provisioner ebs.csi.aws.com".
+  interval: 10m
+  path: ./clusters/staging/storage
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 2m

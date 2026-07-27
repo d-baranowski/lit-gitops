@@ -1,0 +1,97 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] } },
+      "targets": [
+        { "expr": "sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*|utro-.*\"}[1m]))", "legendFormat": "{{service_name}}", "refId": "A" }
+      ],
+      "title": "RPC request rate (req/s) by service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 } ] },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last"] } },
+      "targets": [
+        { "expr": "sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*|utro-.*\", rpc_connect_rpc_error_code!=\"\"}[5m])) / clamp_min(sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*|utro-.*\"}[5m])), 0.0001)", "legendFormat": "{{service_name}}", "refId": "A" }
+      ],
+      "title": "RPC error rate by service (5m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 2 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 9 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] } },
+      "targets": [
+        { "expr": "sum by (rpc_short, rpc_method) (rate(label_replace(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\"}, \"rpc_short\", \"$1\", \"rpc_service\", \".*\\\\.([^.]+)$\")[1m:]))", "legendFormat": "{{rpc_short}}.{{rpc_method}}", "refId": "A" }
+      ],
+      "title": "Request rate per RPC (entity.method)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 2 }, "unit": "ms" }
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (rpc_short, rpc_method, le) (rate(label_replace(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}, \"rpc_short\", \"$1\", \"rpc_service\", \".*\\\\.([^.]+)$\")[5m:])))", "legendFormat": "p95 {{rpc_short}}.{{rpc_method}}", "refId": "A" }
+      ],
+      "title": "Latency p95 per RPC (entity.method, 5m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 200 }, { "color": "red", "value": 1000 } ] }, "unit": "ms" }
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 29 },
+      "id": 4,
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "Value", "desc": true } ] },
+      "targets": [
+        { "expr": "topk(15, histogram_quantile(0.95, sum by (service_name, rpc_short, rpc_method, le) (rate(label_replace(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}, \"rpc_short\", \"$1\", \"rpc_service\", \".*\\\\.([^.]+)$\")[5m:]))))", "format": "table", "instant": true, "refId": "A" }
+      ],
+      "title": "Top 15 slowest RPCs (p95, 5m)",
+      "type": "table"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["utro", "rpc"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Utro / Services Overview",
+  "uid": "utro-services",
+  "version": 3,
+  "weekStart": ""
+}

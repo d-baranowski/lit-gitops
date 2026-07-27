@@ -1,0 +1,23 @@
+# The Cloudflare Tunnel connector that exposes Grafana.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cloudflared
+  namespace: flux-system
+spec:
+  dependsOn:
+    # Two reasons, both real:
+    #   1. The tunnel's origin is grafana-service, which grafana-operator creates
+    #      from the Grafana CR in observability/resources. Starting cloudflared
+    #      first means every request 502s until Grafana appears.
+    #   2. The ServiceMonitor here needs the CRD from kube-prometheus-stack,
+    #      which observability-resources transitively guarantees.
+    - name: observability-resources
+  interval: 10m
+  path: ./clusters/staging/cloudflared
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m

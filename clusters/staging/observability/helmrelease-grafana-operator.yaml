@@ -1,0 +1,32 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana-operator
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: grafana-operator
+      version: "5.22.2"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana-operator
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    timeout: 10m
+  upgrade:
+    crds: CreateReplace
+    timeout: 10m
+  values:
+    # Cluster-scoped watch. Only the observability namespace is used today, but
+    # namespaceScope: true bakes the namespace into the operator's RBAC and
+    # changing it later means a reinstall.
+    namespaceScope: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi

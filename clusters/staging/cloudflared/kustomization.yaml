@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Lives in its own directory rather than under observability/ because it depends
+# on BOTH halves of that stack: the Grafana Service (created by grafana-operator
+# from the Grafana CR in observability/resources) must exist before the tunnel
+# has anything to forward to, and the ServiceMonitor CRD comes from
+# kube-prometheus-stack in observability/.
+resources:
+  - externalsecret-cloudflared-token.yaml
+  - deployment-cloudflared.yaml
+  - service-cloudflared.yaml

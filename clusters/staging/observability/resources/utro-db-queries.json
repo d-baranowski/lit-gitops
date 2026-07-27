@@ -1,0 +1,100 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Slowest DB queries (last 1h)",
+      "description": "All Postgres spans ordered by duration. Click traceID to view the parent RPC trace; the SELECT/INSERT/UPDATE span itself shows the formatted SQL in db.statement.",
+      "type": "table",
+      "options": { "showHeader": true },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "traceID" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace in Explore",
+                    "url": "/explore?left=%7B%22datasource%22:%22tempo%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22queryType%22:%22traceql%22,%22query%22:%22${__value.raw}%22%7D%5D%7D",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceqlSearch",
+          "filters": [
+            { "id": "db-system", "operator": "=", "scope": "span", "tag": "db.system", "value": ["postgresql"], "valueType": "string" },
+            { "id": "db-op", "operator": "=~", "scope": "span", "tag": "db.operation", "value": "SELECT|INSERT|UPDATE|DELETE", "valueType": "string" },
+            { "id": "duration", "operator": ">", "scope": "intrinsic", "tag": "duration", "value": "5ms", "valueType": "duration" }
+          ],
+          "limit": 50,
+          "tableType": "spans",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 16 },
+      "id": 2,
+      "title": "Query rate by operation (1m)",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }, "unit": "ops" }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"rpg.core\", span_kind=\"SPAN_KIND_CLIENT\", span_name=~\"SELECT|INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|SET\"}[1m]))",
+          "legendFormat": "{{span_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 16 },
+      "id": 3,
+      "title": "Query latency p95 by operation (5m)",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }, "unit": "s" }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"rpg.core\", span_kind=\"SPAN_KIND_CLIENT\", span_name=~\"SELECT|INSERT|UPDATE|DELETE\"}[5m])))",
+          "legendFormat": "p95 {{span_name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["utro", "db", "queries"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Utro / Database Queries",
+  "uid": "utro-db-queries",
+  "version": 1,
+  "weekStart": ""
+}

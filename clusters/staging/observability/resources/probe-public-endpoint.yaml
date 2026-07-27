@@ -1,0 +1,35 @@
+# Synthetic HTTPS check on the public utro endpoint (RISKS.md §5).
+#
+# SCOPE CAVEAT, stated plainly: §5 asks for a check "from outside AWS". This one
+# runs inside the very cluster it is watching, so it verifies the app, the
+# HTTPRoute, the Gateway and the served certificate — but it exits through the
+# same VPC it is testing and cannot detect a failure between the internet and the
+# NLB. A DNS record clobbered at Cloudflare, or an NLB with a dead AZ, would
+# still go unnoticed. The external half of §5 remains open.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: utro-public-endpoint
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: observability
+spec:
+  # 60s: fast enough that PublicEndpointDown (for: 5m) needs several consecutive
+  # failures, slow enough not to add meaningful load.
+  interval: 60s
+  scrapeTimeout: 30s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+    scheme: http
+    path: /probe
+  targets:
+    staticConfig:
+      static:
+        # /api/health is the UI's health endpoint (see utro/ui-deployment.yaml);
+        # it is also the only path exposed through the Gateway, so probing it
+        # exercises the whole public request path rather than just TLS.
+        - https://utro-staging.inspi.cloud/api/health
+      labels:
+        environment: staging
+        probe_target: utro-ui

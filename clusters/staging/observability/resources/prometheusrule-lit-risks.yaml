@@ -1,0 +1,308 @@
+# Alerts for the risks catalogued in infrastructure/RISKS.md.
+#
+# That file opens with: "Risks that are understood and accepted, but cannot
+# currently be detected. This estate has no alerting, so each of these fails
+# silently today." Each risk there carries a "Signals needed" list; this file is
+# the in-cluster half of those lists. Rule groups are named for the risk they
+# close so the two documents stay traceable to each other.
+#
+# NOT covered here, on purpose:
+#   - kube-prometheus-stack already ships kubernetes-apps, kubernetes-resources,
+#     kubernetes-storage, node-exporter and kubelet rule groups. Node memory/disk
+#     pressure, filesystem fill rate, PV exhaustion and generic pod crash-looping
+#     are all in there. Duplicating them would only produce two pages per event.
+#   - RISKS §1's CloudWatch StatusCheckFailed alarm on the NAT instance, §2's
+#     Cost Anomaly Detection, and §5's genuinely-external synthetic check. None
+#     are expressible in Prometheus; the NAT one especially, since a dead NAT
+#     takes this cluster's egress with it and it cannot report its own blind spot.
+#
+# ALL of the metric names below should be confirmed against the live cluster the
+# first time this reconciles — a rule referencing a metric that does not exist is
+# silently never-firing, which is indistinguishable from "healthy":
+#   kubectl -n observability port-forward svc/kps-prometheus 9090:9090
+#   curl -s localhost:9090/api/v1/label/__name__/values | tr ',' '\n' | grep certmanager
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lit-risks
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: observability
+spec:
+  groups:
+    # -----------------------------------------------------------------------
+    # RISKS §1 (NAT death -> silent cert expiry) and §4 (ACME rate-limit lockout)
+    #
+    # These share a failure signature. Public ingress does NOT traverse the NAT
+    # instance, so the site keeps serving while egress is dead — but cert-manager's
+    # ACME calls DO. The first symptom of a month-old NAT outage would otherwise
+    # be a browser security warning.
+    #
+    # Requires cert-manager's ServiceMonitor, which is enabled in
+    # clusters/staging/cert-manager/helmrelease-cert-manager.yaml.
+    # -----------------------------------------------------------------------
+    - name: lit.certificates
+      rules:
+        - alert: CertificateExpiringSoon
+          # Let's Encrypt certs last 90d and cert-manager renews at ~60d, so a
+          # healthy cert is never below 30d. 21d means two renewal attempts have
+          # already failed and there is still a week of slack to fix it.
+          expr: |
+            (certmanager_certificate_expiration_timestamp_seconds - time()) < (21 * 24 * 3600)
+          for: 1h
+          labels:
+            severity: critical
+            risk: "1"
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in less than 21 days"
+            description: >-
+              Renewal should have happened at ~30 days remaining. The most likely cause is
+              that cert-manager cannot reach Let's Encrypt — check the NAT instance first
+              (RISKS.md §1), then the DNS-01 solver.
+            runbook: "infrastructure/RISKS.md#1-nat-instance-death--silent-certificate-expiry"
+
+        - alert: CertificateNotReady
+          # Ready=False for half an hour is well past any legitimate issuance,
+          # which completes in seconds once DNS-01 propagates.
+          expr: |
+            certmanager_certificate_ready_status{condition="True"} == 0
+          for: 30m
+          labels:
+            severity: warning
+            risk: "4"
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} has not been Ready for 30 minutes"
+            description: >-
+              Check the Certificate, CertificateRequest and Order objects. If issuance is
+              failing repeatedly, stop and read RISKS.md §4 before retrying — Let's Encrypt
+              allows only 5 failed validations per hostname per hour, and burning that
+              budget turns debugging into one-hour increments.
+            runbook: "infrastructure/RISKS.md#4-acme-rate-limit-lockout"
+
+        - alert: ACMERequestsFailing
+          # The early warning for §4: catches failures while there is still rate
+          # budget left, rather than after lockout.
+          expr: |
+            sum by (status) (
+              rate(certmanager_http_acme_client_request_count{status!~"2.."}[15m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+            risk: "4"
+          annotations:
+            summary: "cert-manager ACME requests are failing (HTTP {{ $labels.status }})"
+            description: >-
+              Repeated non-2xx responses from Let's Encrypt. 429 means the rate limit has
+              already been hit; anything else usually means the Cloudflare DNS-01 token
+              scope is wrong (RISKS.md §6).
+            runbook: "infrastructure/RISKS.md#4-acme-rate-limit-lockout"
+
+    # -----------------------------------------------------------------------
+    # RISKS §3 (node pod-density ceiling)
+    #
+    # "The failure is indirect and confusing: the DoNotSchedule zone spread on the
+    # gateway data plane means an unschedulable replica stays Pending rather than
+    # doubling up in one AZ, which surfaces as a load balancer with a dead
+    # availability zone, not as an obvious pod error."
+    # -----------------------------------------------------------------------
+    - name: lit.capacity
+      rules:
+        - alert: PodPendingTooLong
+          # Cluster Autoscaler provisions a node in ~2-3 minutes. Past 5, either
+          # it has failed or it has nothing left to give.
+          expr: |
+            kube_pod_status_phase{phase="Pending"} == 1
+          for: 5m
+          labels:
+            severity: warning
+            risk: "3"
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been Pending for 5 minutes"
+            description: >-
+              Cluster Autoscaler has not been able to place this pod. Check whether the node
+              group is at max_size, and whether the blocker is the per-node pod ceiling
+              (17 on t3.medium with the default VPC CNI) rather than CPU or memory.
+            runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
+
+        - alert: NodeGroupAtMaxSize
+          # The specific gap RISKS §3 calls out: "nothing alerts when the cluster
+          # sits at max_size and can grow no further."
+          expr: |
+            max(cluster_autoscaler_nodes_count{state="ready"})
+              >= max(cluster_autoscaler_max_nodes_count)
+          for: 15m
+          labels:
+            severity: warning
+            risk: "3"
+          annotations:
+            summary: "Node group is at max_size and cannot scale further"
+            description: >-
+              Every further unschedulable pod will stay Pending indefinitely. Either raise
+              node_group_max_size in environments/staging/main.tf (and accept the cost) or
+              reduce resource requests. This is also the cost signal §3 asks for — sustained
+              max_size is what an unexpected bill looks like in advance.
+            runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
+
+        - alert: PodDensityCeilingNear
+          # The VPC CNI caps pods per node by ENI/IP capacity, well below what CPU
+          # and memory would allow. Nothing else in the stack surfaces that limit.
+          expr: |
+            (
+              sum by (node) (kubelet_running_pods)
+              /
+              sum by (node) (kube_node_status_allocatable{resource="pods"})
+            ) > 0.85
+          for: 30m
+          labels:
+            severity: info
+            risk: "3"
+          annotations:
+            summary: "Node {{ $labels.node }} is above 85% of its pod capacity"
+            description: >-
+              Approaching the VPC CNI per-node pod limit. Scheduling failures from this
+              look like a capacity problem even when CPU and memory are largely idle.
+            runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
+
+    # -----------------------------------------------------------------------
+    # RISKS §5 (no uptime monitoring on the public endpoint)
+    #
+    # In-cluster half only — see probe-public-endpoint.yaml for why that is not
+    # the whole of what §5 asks for.
+    # -----------------------------------------------------------------------
+    - name: lit.public-endpoint
+      rules:
+        - alert: PublicEndpointDown
+          expr: |
+            probe_success{probe_target="utro-ui"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            risk: "5"
+          annotations:
+            summary: "utro-staging.inspi.cloud is not serving 2xx on /api/health"
+            description: >-
+              The public endpoint has failed its synthetic check for 5 minutes. Walk the
+              path: UI pods -> HTTPRoute -> Gateway -> NLB. Note this probe runs inside the
+              cluster, so if it passes while users report an outage, the fault is between
+              the internet and the NLB and this alert cannot see it.
+            runbook: "infrastructure/RISKS.md#5-no-uptime-monitoring-on-the-public-endpoint"
+
+        - alert: ServedCertExpiringSoon
+          # The independent cert check §1 asks for: asserts what is actually being
+          # SERVED, rather than what cert-manager believes it has issued. Catches
+          # the case where the Gateway is serving a stale secret.
+          expr: |
+            (probe_ssl_earliest_cert_expiry{probe_target="utro-ui"} - time()) < (21 * 24 * 3600)
+          for: 1h
+          labels:
+            severity: critical
+            risk: "1"
+          annotations:
+            summary: "The certificate served by utro-staging.inspi.cloud expires in less than 21 days"
+            description: >-
+              Independent of cert-manager's own view. If CertificateExpiringSoon is quiet
+              while this fires, cert-manager has renewed but the Gateway is still serving
+              the old secret.
+            runbook: "infrastructure/RISKS.md#1-nat-instance-death--silent-certificate-expiry"
+
+        - alert: BlackboxProbeSlow
+          expr: |
+            probe_duration_seconds{probe_target="utro-ui"} > 5
+          for: 15m
+          labels:
+            severity: info
+            risk: "5"
+          annotations:
+            summary: "Public endpoint health check is taking over 5 seconds"
+            description: "Sustained latency on /api/health. Usually the UI pod or its upstream, not the network."
+
+    # -----------------------------------------------------------------------
+    # utro application health.
+    #
+    # Not from RISKS.md — that file predates any app monitoring — but the same
+    # argument applies: until now a failed rollout was only discoverable by a
+    # human loading the page. Deliberately thin, since kube-prometheus-stack's
+    # kubernetes-apps group already covers generic Deployment and pod failure.
+    # -----------------------------------------------------------------------
+    - name: lit.utro
+      rules:
+        - alert: UtroDeploymentDegraded
+          expr: |
+            kube_deployment_status_replicas_unavailable{namespace="default", deployment=~"utr-staging-.*"} > 0
+          for: 10m
+          labels:
+            severity: warning
+            component: utro
+          annotations:
+            summary: "Deployment {{ $labels.deployment }} has unavailable replicas"
+            description: >-
+              Ten minutes is past any normal rolling update. Check the pod events — on this
+              cluster the usual causes are an image pull failure or no room to schedule.
+
+        - alert: UtroNoTracesReceived
+          # The specific regression this whole stack was built to make visible.
+          # Every utro Deployment sets TR_ENDPOINT to the OTel collector and has
+          # been exporting into the void since before the collector existed
+          # (utro/README.md records it as a known caveat: trace export fails
+          # silently). If this fires, it has silently regressed.
+          expr: |
+            sum(rate(otelcol_receiver_accepted_spans_total[15m])) == 0
+          for: 30m
+          labels:
+            severity: info
+            component: utro
+          annotations:
+            summary: "The OTel collector has received no spans for 30 minutes"
+            description: >-
+              Either the app has stopped exporting or TR_ENDPOINT no longer resolves. The
+              collector Service must stay named exactly
+              otel-collector.observability.svc.cluster.local — that name is hardcoded in
+              every utro Deployment.
+
+    # -----------------------------------------------------------------------
+    # The monitoring stack watching itself. Without this, everything above fails
+    # open: a dead Alloy or a Loki rejecting writes looks exactly like silence.
+    # -----------------------------------------------------------------------
+    - name: lit.observability
+      rules:
+        - alert: LokiWriteFailing
+          expr: |
+            sum(rate(loki_request_duration_seconds_count{route=~".*push.*", status_code=~"5.."}[10m])) > 0
+          for: 15m
+          labels:
+            severity: warning
+            component: observability
+          annotations:
+            summary: "Loki is rejecting log writes"
+            description: >-
+              Check S3 access first — Loki authenticates to lit-staging-loki-chunks via EKS
+              Pod Identity, which binds by service account name. If the chart's
+              serviceAccount.name and the Terraform association drift apart, the AWS SDK
+              falls through to anonymous and every write 403s.
+
+        - alert: AlloyNotShippingLogs
+          expr: |
+            sum(rate(loki_write_sent_entries_total[15m])) == 0
+          for: 30m
+          labels:
+            severity: warning
+            component: observability
+          annotations:
+            summary: "Alloy has shipped no log entries for 30 minutes"
+            description: "Either every workload has gone quiet, or the log pipeline is broken. The second is far more likely."
+
+        - alert: CloudflaredTunnelDown
+          # Grafana's only route in. If this fires the dashboards are unreachable
+          # even though every alert above still evaluates correctly.
+          expr: |
+            sum(cloudflared_tunnel_ha_connections) == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: observability
+          annotations:
+            summary: "No healthy Cloudflare tunnel connections — Grafana is unreachable"
+            description: >-
+              Grafana is exposed only through the tunnel. Break-glass is the bastion:
+              kubectl -n observability port-forward svc/grafana-service 3000:3000

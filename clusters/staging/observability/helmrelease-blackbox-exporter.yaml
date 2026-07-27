@@ -1,0 +1,58 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: blackbox-exporter
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: prometheus-blackbox-exporter
+      version: "11.15.1"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+  values:
+    # Answers RISKS.md §5 ("no uptime monitoring on the public endpoint") — but
+    # only half of it. §5 asks for a synthetic check FROM OUTSIDE AWS, and this
+    # probe runs inside the cluster it is monitoring. It will catch a dead pod, a
+    # broken HTTPRoute, a failed rollout or an expiring certificate; it cannot
+    # catch anything that breaks the path from the internet to the NLB, because
+    # it never traverses it. The genuinely-external check is still outstanding.
+    fullnameOverride: blackbox-exporter
+
+    replicas: 1
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+
+    config:
+      modules:
+        http_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: [] # defaults to 2xx
+            method: GET
+            follow_redirects: true
+            # The NLB has no IPv6 listener; without this the prober can pick an
+            # AAAA record and report a false outage.
+            preferred_ip_protocol: "ip4"
+            ip_protocol_fallback: false
+
+    # The Probe CR that actually points this at utro-staging.inspi.cloud lives in
+    # observability/resources — the Probe CRD ships with kube-prometheus-stack in
+    # THIS directory, and a CR cannot be applied in the same kustomize build as
+    # the release that installs its CRD.
+    serviceMonitor:
+      enabled: false

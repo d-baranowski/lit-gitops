@@ -1,0 +1,37 @@
+# Metrics-only Service. cloudflared receives no inbound traffic — it dials out —
+# so this exists purely to give the ServiceMonitor something to select.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared
+  namespace: observability
+  labels:
+    app: cloudflared
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudflared
+  ports:
+    - name: metrics
+      port: 2000
+      targetPort: metrics
+      protocol: TCP
+---
+# Makes tunnel health an alertable signal (see the CloudflaredTunnelDown rule in
+# observability/resources/prometheusrule-lit-risks.yaml). The Jenkins tunnel has
+# no equivalent — its health is only visible in the Cloudflare dashboard.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cloudflared
+  namespace: observability
+  labels:
+    app: cloudflared
+spec:
+  selector:
+    matchLabels:
+      app: cloudflared
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

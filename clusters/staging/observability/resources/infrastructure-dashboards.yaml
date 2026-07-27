@@ -1,0 +1,80 @@
+# Host + cluster resource dashboards. JSON is vendored (not pulled from
+# grafana.com via grafanaCom.id) because the operator's grafanaCom import
+# doesn't pre-populate the `current` value of the datasource template
+# variable — panels reference `${ds_prometheus}` / `${datasource}` for
+# their datasource UID, which resolved to empty and produced "No data"
+# on every panel. The vendored JSONs are pre-patched so the datasource
+# variable defaults to the `prometheus` GrafanaDatasource on first load,
+# and (for the dotdc dashboards) the `cluster=$cluster` PromQL filter is
+# stripped — our metrics don't carry a `cluster` label since Prometheus
+# `external_labels` only apply outbound (federation / remote_write), not
+# to local stored series.
+#
+# Data sources:
+#   - node-exporter        (DaemonSet, installed by kube-prometheus-stack)
+#   - kube-state-metrics   (Deployment, installed by kube-prometheus-stack)
+#   - kubelet / cAdvisor   (chart wires the scrape targets)
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: infrastructure-folder
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  title: Infrastructure
+---
+# Canonical node-exporter dashboard. Host-level CPU / memory / disk / network /
+# file descriptors / per-CPU breakdowns / systemd. ~30 panels, well maintained.
+# https://grafana.com/grafana/dashboards/1860 (patched: ds_prometheus.current)
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: node-exporter-full
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: infrastructure-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: infra-dashboard-node-exporter-full
+    key: node-exporter-full.json
+---
+# Cluster-wide rollup: CPU/mem/pod count/PVCs across all nodes.
+# https://grafana.com/grafana/dashboards/15757 (patched: datasource.current,
+# cluster filter stripped, cluster variable hidden)
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: k8s-views-global
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: infrastructure-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: infra-dashboard-k8s-views-global
+    key: k8s-views-global.json
+---
+# Per-node breakdown: CPU/mem requests vs usage, pod density, conditions.
+# https://grafana.com/grafana/dashboards/15759 (same patches as 15757)
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: k8s-views-nodes
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: infrastructure-folder
+  resyncPeriod: 5m
+  configMapRef:
+    name: infra-dashboard-k8s-views-nodes
+    key: k8s-views-nodes.json

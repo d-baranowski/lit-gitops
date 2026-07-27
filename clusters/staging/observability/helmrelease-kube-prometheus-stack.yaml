@@ -1,0 +1,158 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "85.0.1"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    timeout: 15m
+  upgrade:
+    crds: CreateReplace
+    timeout: 15m
+  values:
+    # Short release name: it prefixes every generated object, so the Prometheus
+    # Service becomes kps-prometheus.observability.svc — a name hardcoded in the
+    # Grafana datasource, Tempo's metricsGenerator remoteWriteUrl and the OTel
+    # collector's prometheusremotewrite exporter. Changing it breaks all three.
+    fullnameOverride: kps
+
+    # Grafana is managed by grafana-operator (observability/resources), not by
+    # this chart. forceDeploy* off so the chart does not lay down ConfigMap
+    # datasources/dashboards that would fight the operator's CRs.
+    grafana:
+      enabled: false
+      forceDeployDatasources: false
+      forceDeployDashboards: false
+
+    prometheusOperator:
+      # Leaves the chart's own kube-webhook-certgen Job to issue the admission
+      # webhook's certificate. The upstream alternative wires this to a
+      # cert-manager selfsigned ClusterIssuer, but this cluster only has the two
+      # ACME issuers — adding a selfsigned one purely for this would make the
+      # whole metrics stack depend on cert-manager being healthy for no gain.
+      admissionWebhooks:
+        certManager:
+          enabled: false
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+
+    prometheus:
+      prometheusSpec:
+        # 7d, against the baseline's 14d. Two t3.medium nodes with a hard pod
+        # ceiling is not a lot of cluster, and this is the single biggest lever on
+        # both disk and memory. Loki and Tempo keep 14d of the detail in S3, so
+        # what is lost is long-range metric resolution, not incident history.
+        retention: 7d
+        retentionSize: ""
+
+        # Discover ServiceMonitor / PodMonitor / PrometheusRule / Probe from every
+        # namespace. Without the NilUsesHelmValues overrides the operator only
+        # matches objects carrying this release's labels, which would silently
+        # exclude cert-manager's ServiceMonitor in the cert-manager namespace —
+        # i.e. the RISKS §1 and §4 alerts would evaluate against no data.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        serviceMonitorNamespaceSelector: {}
+        podMonitorNamespaceSelector: {}
+        ruleNamespaceSelector: {}
+        probeNamespaceSelector: {}
+
+        # Tempo's metrics-generator pushes service-graph and span metrics in via
+        # /api/v1/write. This field maps to --web.enable-remote-write-receiver;
+        # `enableFeatures: [remote-write-receiver]` does NOT — it is a separate
+        # feature-flag mechanism and does not open the HTTP endpoint.
+        enableRemoteWriteReceiver: true
+
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: gp3
+              resources:
+                requests:
+                  storage: 20Gi
+
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        retention: 240h
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+        storage:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: gp3
+              resources:
+                requests:
+                  storage: 2Gi
+      # NOTE: no receiver is configured, so alerts fire into the chart's default
+      # "null" route and go nowhere. Wiring a real receiver (SMTP via the
+      # existing lit/staging/resend vendor secret, or a webhook) is deliberately
+      # left as a follow-up — see OBSERVABILITY-DEPLOY.md.
+
+    # The chart ships both of these with EMPTY resource blocks, which makes them
+    # BestEffort — first in line for eviction under node memory pressure. On a
+    # cluster this size that is a real risk, and losing them is the worst thing
+    # to lose quietly: kube-state-metrics backs the pod/deployment/node alerts
+    # (including PodPendingTooLong and PodDensityCeilingNear) and node-exporter
+    # backs every host dashboard. Small explicit requests make them Burstable.
+    kube-state-metrics:
+      enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+    nodeExporter:
+      enabled: true
+    prometheus-node-exporter:
+      hostRootFsMount:
+        enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+
+    # EKS control-plane adaptation. On a managed control plane the scheduler,
+    # controller-manager and etcd have no scrapeable endpoint — leaving them on
+    # produces three permanently-down targets and their bundled alerts fire
+    # forever. kube-proxy DOES run as a DaemonSet on the nodes, so it stays.
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: true

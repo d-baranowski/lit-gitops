@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# NO top-level `namespace:` field, deliberately.
+#
+# HelmRepositories must live in flux-system, because that is where the
+# helm-controller resolves a HelmRelease's sourceRef from. Everything else here
+# already declares `metadata.namespace: observability` explicitly. Setting a
+# kustomize-level namespace would rewrite the HelmRepositories into
+# observability and every HelmRelease would fail to resolve its chart.
+
+# This directory holds only resources whose kinds already exist on the cluster.
+# The CRs that need an operator's CRDs first — Grafana, GrafanaDatasource,
+# GrafanaDashboard, Probe, PrometheusRule — live in ./resources and are
+# reconciled by a separate Flux Kustomization with dependsOn: observability.
+resources:
+  - namespace-observability.yaml
+
+  # Helm repositories (all in flux-system, see above)
+  - helmrepo-prometheus-community.yaml
+  - helmrepo-grafana.yaml
+  - helmrepo-grafana-operator.yaml
+  - helmrepo-opentelemetry.yaml
+
+  # Metrics + alerting
+  - helmrelease-kube-prometheus-stack.yaml
+  # Logs
+  - helmrelease-loki.yaml
+  - helmrelease-alloy.yaml
+  # Traces
+  - helmrelease-tempo.yaml
+  # Fans app-pushed OTLP out to Tempo (traces) and Prometheus (metrics). Apps
+  # cannot push straight to Tempo: its OTLP endpoint serves traces only.
+  - helmrelease-otel-collector.yaml
+  # Dashboards/datasources as CRs. Grafana itself is a CR in ./resources.
+  - helmrelease-grafana-operator.yaml
+  # Synthetic probing of the public endpoint (RISKS.md §5)
+  - helmrelease-blackbox-exporter.yaml

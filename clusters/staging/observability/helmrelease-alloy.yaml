@@ -1,0 +1,134 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: alloy
+      version: "1.11.0"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+  values:
+    # Grafana Alloy, not Promtail. Promtail reached end of life in March 2026 and
+    # takes no further fixes; Alloy is its supported successor and reads the same
+    # pod logs into the same Loki.
+    fullnameOverride: alloy
+
+    controller:
+      # One collector per node, each reading only its own node's pods (see the
+      # field selector below). Two extra pods today, one per additional node as
+      # the cluster scales.
+      type: daemonset
+
+    alloy:
+      # Alloy defaults to also exposing a clustering/UI service; neither is
+      # needed for a plain log shipper and the UI would be another thing to
+      # think about exposing.
+      clustering:
+        enabled: false
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+
+      # The Kubernetes API tells each Alloy which pods live on its own node.
+      # HOSTNAME is the Alloy pod's own name, which is NOT the node name, so the
+      # node name has to be projected in explicitly.
+      extraEnv:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+
+      configMap:
+        content: |-
+          // Only this node's pods. Without the field selector every Alloy in the
+          // DaemonSet would ship every pod's logs and Loki would receive N
+          // duplicate copies on an N-node cluster.
+          discovery.kubernetes "pods" {
+            role = "pod"
+
+            selectors {
+              role  = "pod"
+              field = "spec.nodeName=" + sys.env("NODE_NAME")
+            }
+          }
+
+          // Promote the Kubernetes metadata to Loki labels. Keep this set small
+          // and bounded — every distinct label combination is a separate Loki
+          // stream, and high-cardinality labels (pod name, uid) are what make a
+          // small Loki fall over.
+          discovery.relabel "pod_logs" {
+            targets = discovery.kubernetes.pods.targets
+
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label  = "pod"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label  = "container"
+            }
+
+            // The utro workloads label themselves `app: utr-staging-<service>`.
+            // Exposing it as service_name is what lets the ported dashboards and
+            // the Loki -> Tempo trace correlation work unchanged: Tempo's
+            // tracesToLogsV2 maps the OTel service.name onto this label.
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app"]
+              target_label  = "service_name"
+            }
+
+            // node_name, not node: the ported utro-error-logs dashboard groups
+            // by exactly this label name.
+            rule {
+              source_labels = ["__meta_kubernetes_pod_node_name"]
+              target_label  = "node_name"
+            }
+          }
+
+          // Reads through the Kubernetes API rather than tailing /var/log/pods,
+          // so Alloy needs no hostPath mount and no privileged securityContext.
+          //
+          // No processing stages: log levels are not parsed here. Loki derives
+          // `detected_level` itself (limits_config.discover_log_levels, on by
+          // default with structured metadata), which is the field the
+          // utro-error-logs dashboard filters on. Extracting a level into a Loki
+          // LABEL instead would multiply the stream count for no benefit.
+          loki.source.kubernetes "pod_logs" {
+            targets    = discovery.relabel.pod_logs.output
+            forward_to = [loki.write.default.receiver]
+          }
+
+          loki.write "default" {
+            endpoint {
+              url = "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }
+
+          // Alloy's own metrics, scraped by the ServiceMonitor below.
+          logging {
+            level  = "info"
+            format = "logfmt"
+          }
+
+    serviceMonitor:
+      enabled: true
