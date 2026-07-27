@@ -16,9 +16,25 @@ spec:
   install:
     crds: CreateReplace
     timeout: 15m
+    # Without this, retries default to 0: one failed install sets
+    # `Stalled: RetriesExceeded` and Flux never tries again, even after the
+    # cause is fixed in git. Worse, the failed Helm release is left behind, so
+    # the next attempt hits "has no deployed releases" and needs a manual
+    # `flux delete helmrelease` to clear.
+    #
+    # With retries, Flux uninstalls between attempts and comes back on its own —
+    # which matters here because the realistic failure is transient: this release
+    # waits on a DaemonSet that cannot schedule until Cluster Autoscaler has
+    # finished adding a node.
+    remediation:
+      retries: 3
   upgrade:
     crds: CreateReplace
     timeout: 15m
+    remediation:
+      retries: 3
+      # Roll back to the last working release rather than sitting broken.
+      strategy: rollback
   values:
     # Short release name: it prefixes every generated object, so the Prometheus
     # Service becomes kps-prometheus.observability.svc — a name hardcoded in the

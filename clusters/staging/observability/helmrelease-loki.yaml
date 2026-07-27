@@ -15,8 +15,15 @@ spec:
         namespace: flux-system
   install:
     timeout: 15m
+    # See helmrelease-kube-prometheus-stack.yaml: without retries a single failed
+    # install stalls permanently and leaves a failed Helm release behind.
+    remediation:
+      retries: 3
   upgrade:
     timeout: 15m
+    remediation:
+      retries: 3
+      strategy: rollback
   values:
     # One pod holding every Loki component. The distributed modes exist to scale
     # ingest across many nodes; on a two-node cluster they would just multiply

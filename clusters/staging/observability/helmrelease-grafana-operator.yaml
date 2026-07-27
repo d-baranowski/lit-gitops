@@ -16,9 +16,16 @@ spec:
   install:
     crds: CreateReplace
     timeout: 10m
+    # See helmrelease-kube-prometheus-stack.yaml: without retries a single failed
+    # install stalls permanently and leaves a failed Helm release behind.
+    remediation:
+      retries: 3
   upgrade:
     crds: CreateReplace
     timeout: 10m
+    remediation:
+      retries: 3
+      strategy: rollback
   values:
     # Cluster-scoped watch. Only the observability namespace is used today, but
     # namespaceScope: true bakes the namespace into the operator's RBAC and

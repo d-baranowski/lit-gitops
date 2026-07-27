@@ -15,8 +15,15 @@ spec:
         namespace: flux-system
   install:
     timeout: 10m
+    # See helmrelease-kube-prometheus-stack.yaml: without retries a single failed
+    # install stalls permanently and leaves a failed Helm release behind.
+    remediation:
+      retries: 3
   upgrade:
     timeout: 10m
+    remediation:
+      retries: 3
+      strategy: rollback
   values:
     # Grafana Alloy, not Promtail. Promtail reached end of life in March 2026 and
     # takes no further fixes; Alloy is its supported successor and reads the same
