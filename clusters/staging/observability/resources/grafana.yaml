@@ -66,24 +66,8 @@ spec:
       url_login: "false"
       jwk_set_url: "https://inspiration-particle.cloudflareaccess.com/cdn-cgi/access/certs"
       cache_ttl: "60m"
-      # A JMESPath expression, not a plain value — the inner single quotes make
-      # it a string literal within the expression, which is how a constant role
-      # is spelled.
-      #
-      # GrafanaAdmin, not Admin. `Admin` is only *organisation* admin: full
-      # control of dashboards, datasources, users and alerting within the org,
-      # but no access to Server Admin — no user administration across orgs, no
-      # org management, no server settings or stats page.
-      # `GrafanaAdmin` grants the server-admin flag AND org Admin on top.
-      #
-      # Requires allow_assign_grafana_admin below; without it Grafana silently
-      # downgrades the mapping to org Admin and the Server Admin menu never
-      # appears.
-      #
-      # Safe here because Cloudflare Access is the real gate and its policy
-      # allows exactly one address — anyone who reaches Grafana at all has
-      # already been authorised as that person.
-      role_attribute_path: "'GrafanaAdmin'"
+      # role_attribute_path is deliberately NOT here — it is set as an env var on
+      # the container below. See the comment there for why.
       allow_assign_grafana_admin: "true"
       # expect_claims (issuer + audience) is NOT set here. It contains the Access
       # application's AUD tag, which does not exist until Terraform has applied,
@@ -107,12 +91,50 @@ spec:
         spec:
           containers:
             - name: grafana
-              # GF_AUTH_JWT_EXPECT_CLAIMS, sourced from Secrets Manager via ESO.
-              # Grafana maps GF_<SECTION>_<KEY> onto grafana.ini, and the value
-              # is a JSON string, which survives an env var intact.
-              #
-              # The operator merges a partial container spec by name, so this
-              # does not replace the image/probes/volumes it manages.
+              # Both of these are grafana.ini settings delivered as env vars
+              # (Grafana maps GF_<SECTION>_<KEY> onto the ini). The operator
+              # merges a partial container spec by name, so this does not
+              # replace the image/probes/volumes it manages.
+              env:
+                # THE ROLE MAPPING MUST BE AN ENV VAR, NOT spec.config.
+                #
+                # Set under spec.config this lands in grafana.ini as
+                #   role_attribute_path = 'GrafanaAdmin'
+                # and the file on disk really does still show the quotes — but
+                # Grafana's INI parser STRIPS them when loading. Confirmed
+                # against the running instance:
+                #
+                #   kubectl -n observability exec deploy/grafana-deployment -- \
+                #     curl -s -u admin:$PW localhost:3000/api/admin/settings
+                #   -> "role_attribute_path": "GrafanaAdmin"      (no quotes)
+                #
+                # Grafana then evaluates the JMESPath expression `GrafanaAdmin`
+                # as a FIELD LOOKUP against the JWT claims rather than a string
+                # literal. A Cloudflare Access token has no such claim, so it
+                # returns empty, no role is mapped, and the user silently falls
+                # back to auto_assign_org_role — Viewer. The symptom is a user
+                # with authLabels ["JWT"] but isExternallySynced: false.
+                #
+                # Env vars bypass INI parsing, so the quotes survive and the
+                # expression is a literal. GF_AUTH_JWT_EXPECT_CLAIMS below
+                # demonstrates the same property: its JSON arrives intact.
+                #
+                # NOTE the file on disk is NOT evidence either way — checking
+                # grafana.ini shows quotes and looks fine. Only the settings API
+                # shows what Grafana actually parsed.
+                #
+                # GrafanaAdmin rather than Admin: `Admin` is organisation admin
+                # only. `GrafanaAdmin` additionally sets the server-admin flag,
+                # which is what exposes Administration -> Users/Orgs/Settings.
+                # It needs allow_assign_grafana_admin (set above) or Grafana
+                # quietly downgrades it to org Admin.
+                #
+                # Safe because Cloudflare Access is the real gate and its policy
+                # admits exactly one address.
+                - name: GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH
+                  value: "'GrafanaAdmin'"
+              # GF_AUTH_JWT_EXPECT_CLAIMS, sourced from Secrets Manager via ESO —
+              # it carries the Access AUD, which is only known after apply.
               envFrom:
                 - secretRef:
                     name: grafana-access-jwt
