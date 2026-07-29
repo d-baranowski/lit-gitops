@@ -166,18 +166,22 @@ spec:
               // lowercase, and the dashboard filters on the lowercase form.
               //
               // The backtick wrapper is load-bearing. The chart renders
-              // configMap.content through Helm's `tpl`, so Go template syntax in
-              // this file is evaluated by HELM first, and ToLower is an Alloy
-              // template function that Helm/sprig does not have. Unescaped, the
-              // release fails to render at all:
+              // configMap.content through Helm's `tpl`, so Go template syntax
+              // anywhere in this block is evaluated by HELM first, and ToLower is
+              // an Alloy template function that Helm/sprig does not have.
+              // Unescaped, the release fails to render at all with
               //
-              //   template: gotpl:100: function "ToLower" not defined
+              //   function "ToLower" not defined
               //
               // and because that is a templating error rather than a runtime one,
-              // it takes down the whole HelmRelease — not just this stage.
-              // `{{ ` + backticks + ` }}` makes Helm emit the inner text
-              // verbatim, so Alloy receives {{ ToLower .Value }} and evaluates it
-              // itself at ingest time.
+              // it takes down the whole HelmRelease, not just this stage.
+              // Wrapping the expression in backticks makes Helm emit the inner
+              // text verbatim, so Alloy receives the directive intact and
+              // evaluates it itself at ingest time.
+              //
+              // Note "anywhere in this block" includes comments: Helm sees the
+              // raw string, not Alloy syntax, so a doubled curly brace in a
+              // comment here is a live template call and will break the render.
               stage.template {
                 source   = "level"
                 template = "{{ `{{ ToLower .Value }}` }}"
