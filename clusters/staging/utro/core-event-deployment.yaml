@@ -111,3 +111,19 @@ spec:
             port: health
           initialDelaySeconds: 60
           periodSeconds: 5
+        # Sized from a k6 stress run (60 VU, utro-load.js, 2026-07-29), not from
+        # idle: cpu peaked at 2m, but CDC load follows write volume and the run
+        # was read-only, so 50m is a floor rather than a measurement.
+        # Memory peaked at 29Mi; 128Mi is a floor for GC headroom.
+        #
+        # No cpu limit, deliberately — a limit throttles the container instead of
+        # letting utilization rise and trip the HPA, which is the whole mechanism.
+        # Memory is incompressible so it does get one. Requests are also what
+        # makes this pod Burstable rather than BestEffort (BestEffort is first in
+        # line for eviction) and what Cluster Autoscaler sizes nodes against.
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi

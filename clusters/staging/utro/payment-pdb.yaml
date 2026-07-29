@@ -1,0 +1,20 @@
+# Keeps at least one payment replica serving through voluntary disruptions — node
+# drains above all. Cluster Autoscaler scales this cluster in routinely, and
+# without a budget a single scale-in can evict every replica at once.
+#
+# minAvailable rather than maxUnavailable so the guarantee holds at any replica
+# count the HPA picks. No equivalent exists for core-event or notification: both
+# run a single replica, and minAvailable: 1 on a one-replica workload blocks
+# drains indefinitely, which would wedge the autoscaler.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: utr-staging-payment-pdb
+  namespace: default
+  labels:
+    app: utr-staging-payment
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: utr-staging-payment

@@ -1,0 +1,51 @@
+# Scales ui on CPU. Next.js server — stateless per request, and the only utro
+# workload whose CPU actually moves at rest (measured p95 up to ~40m against
+# single-digit millicores for the Go services), so it is the one most likely to
+# exercise this HPA in practice.
+#
+# maxReplicas is 6: ui renders rather than queries, so replicas add real capacity
+# without pushing load into the 2 ACU Aurora ceiling. Note SSR page loads do hit
+# core for session validation, so this is not entirely free of the database.
+#
+# Requires the metrics-server addon (modules/eks-cluster) AND cpu requests on the
+# Deployment: utilization is computed as a percentage of the request, so without
+# one the target reads <unknown> and this object does nothing.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: utr-staging-ui-hpa
+  namespace: default
+  labels:
+    app: utr-staging-ui
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: utr-staging-ui
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      # Shorter than the Go services' 60s: ui's readinessProbe.initialDelaySeconds
+      # is 10, so a new pod starts absorbing traffic far sooner and the controller
+      # can react faster without stacking pods blindly.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Slower down than up: shedding a replica during a lull only to re-add it
+      # 60s later costs a full cold start each time.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

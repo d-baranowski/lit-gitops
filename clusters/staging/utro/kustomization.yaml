@@ -20,6 +20,18 @@ resources:
   - gateway-service.yaml
   - ui-deployment.yaml
   - ui-service.yaml
+  # Autoscaling + disruption budgets. core-event and notification are absent by
+  # design: core-event owns the single logical replication slot and notification
+  # is pinned at one replica, so neither may scale, and a minAvailable budget on
+  # a one-replica workload would block node drains.
+  - core-hpa.yaml
+  - core-pdb.yaml
+  - payment-hpa.yaml
+  - payment-pdb.yaml
+  - gateway-hpa.yaml
+  - gateway-pdb.yaml
+  - ui-hpa.yaml
+  - ui-pdb.yaml
   # Flux image automation (namespace: flux-system)
   - image-repositories.yaml
   - image-policies.yaml

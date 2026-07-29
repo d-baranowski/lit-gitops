@@ -1,0 +1,50 @@
+# Scales payment on CPU. payment publishes to pgmq (pkg/pgmq, Publisher only —
+# it consumes nothing) and already ran two replicas, so concurrency is proven.
+#
+# maxReplicas is 4, matching core rather than gateway: payment's work is
+# database-bound and Aurora Serverless v2 is capped at 2 ACU in staging
+# (environments/staging/main.tf), so beyond a point extra replicas contend for
+# the same connections instead of adding throughput.
+#
+# Requires the metrics-server addon (modules/eks-cluster) AND cpu requests on the
+# Deployment: utilization is computed as a percentage of the request, so without
+# one the target reads <unknown> and this object does nothing.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: utr-staging-payment-hpa
+  namespace: default
+  labels:
+    app: utr-staging-payment
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: utr-staging-payment
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      # readinessProbe.initialDelaySeconds is 60 on the Go services, so a new pod
+      # contributes zero capacity for a full minute. Without a matching window the
+      # controller keeps stacking pods against CPU that has not dropped yet.
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Slower down than up: shedding a replica during a lull only to re-add it
+      # 60s later costs a full cold start each time.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

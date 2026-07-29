@@ -144,5 +144,5 @@ To skip pg_cron entirely, set `aurora_enable_pg_cron=false` **and**
 ## Validate locally
 
 ```sh
-kubectl kustomize clusters/staging/utro      # renders 38 objects, no errors
+kubectl kustomize clusters/staging/utro      # renders 44 objects, no errors
 ```

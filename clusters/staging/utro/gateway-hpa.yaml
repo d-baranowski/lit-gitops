@@ -1,0 +1,50 @@
+# Scales gateway on CPU. gateway is the stateless BFF that fans out to
+# core/payment/notification — it wires no pgstore, holds no leader election and
+# owns no external resource, which makes it the safest workload here to scale.
+#
+# maxReplicas is 6 rather than core's 4: gateway's work is request fan-out, not
+# database access, so extra replicas add real capacity instead of pushing load
+# into the 2 ACU Aurora ceiling.
+#
+# Requires the metrics-server addon (modules/eks-cluster) AND cpu requests on the
+# Deployment: utilization is computed as a percentage of the request, so without
+# one the target reads <unknown> and this object does nothing.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: utr-staging-gateway-hpa
+  namespace: default
+  labels:
+    app: utr-staging-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: utr-staging-gateway
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      # readinessProbe.initialDelaySeconds is 60 on the Go services, so a new pod
+      # contributes zero capacity for a full minute. Without a matching window the
+      # controller keeps stacking pods against CPU that has not dropped yet.
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Slower down than up: shedding a replica during a lull only to re-add it
+      # 60s later costs a full cold start each time.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
