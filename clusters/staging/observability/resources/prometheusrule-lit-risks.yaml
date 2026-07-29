@@ -42,6 +42,26 @@ spec:
     # clusters/staging/cert-manager/helmrelease-cert-manager.yaml.
     # -----------------------------------------------------------------------
     - name: lit.certificates
+      # LABEL GOTCHA — read before editing these annotations.
+      #
+      # cert-manager exports a `namespace` label naming the Certificate's
+      # namespace, but Prometheus' ServiceMonitor scrape ALSO attaches a
+      # `namespace` label for the target (the cert-manager pod). On collision
+      # Prometheus keeps the target's and renames the metric's to
+      # `exported_namespace`. So for these metrics:
+      #
+      #   namespace          = cert-manager      <- where the controller runs
+      #   exported_namespace = nginx-gateway     <- where the Certificate is
+      #
+      # Using $labels.namespace sends whoever is paged to the wrong namespace.
+      # The first version of these alerts did exactly that and reported
+      # "Certificate cert-manager/utro-staging-tls" for a Certificate that lives
+      # in nginx-gateway.
+      #
+      # The conditional below prefers exported_namespace but falls back to
+      # namespace, so these stay correct if the ServiceMonitor is ever changed
+      # to honorLabels: true (which would remove the collision, and with it
+      # exported_namespace).
       rules:
         - alert: CertificateExpiringSoon
           # Let's Encrypt certs last 90d and cert-manager renews at ~60d, so a
@@ -54,7 +74,7 @@ spec:
             severity: critical
             risk: "1"
           annotations:
-            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in less than 21 days"
+            summary: "Certificate {{ if $labels.exported_namespace }}{{ $labels.exported_namespace }}{{ else }}{{ $labels.namespace }}{{ end }}/{{ $labels.name }} expires in less than 21 days"
             description: >-
               Renewal should have happened at ~30 days remaining. The most likely cause is
               that cert-manager cannot reach Let's Encrypt — check the NAT instance first
@@ -71,7 +91,7 @@ spec:
             severity: warning
             risk: "4"
           annotations:
-            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} has not been Ready for 30 minutes"
+            summary: "Certificate {{ if $labels.exported_namespace }}{{ $labels.exported_namespace }}{{ else }}{{ $labels.namespace }}{{ end }}/{{ $labels.name }} has not been Ready for 30 minutes"
             description: >-
               Check the Certificate, CertificateRequest and Order objects. If issuance is
               failing repeatedly, stop and read RISKS.md §4 before retrying — Let's Encrypt

@@ -9,6 +9,7 @@ resources:
 - gateway-api-crds-kustomization.yaml
 - nginx-gateway-kustomization.yaml
 - cert-manager-kustomization.yaml
+- cert-manager-secrets-kustomization.yaml
 - cert-manager-resources-kustomization.yaml
 - external-dns-kustomization.yaml
 - gateway-kustomization.yaml
