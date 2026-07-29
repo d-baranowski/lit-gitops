@@ -70,19 +70,29 @@ spec:
 
     extraArgs:
       # Pick the node group that leaves the least idle capacity after scaling.
-      # A sane general-purpose default; with one node group it rarely matters,
-      # but it is the right thing the moment a second group appears.
       expander: least-waste
 
-      # NOT setting balance-similar-node-groups. That balances across SEVERAL
-      # ASGs (typically one per AZ). Here a single managed node group spans both
-      # private subnets, so the ASG itself handles AZ balance and the flag has
-      # nothing to do.
+      # Balance across the per-AZ node groups.
       #
+      # Terraform now creates ONE managed node group per availability zone
+      # (modules/eks-cluster), replacing the single group that spanned both
+      # private subnets. That change exists because EBS volumes cannot cross an
+      # AZ: with one multi-AZ group, Cluster Autoscaler could not promise a new
+      # node would land in the zone a pending pod's volume lived in, so it
+      # declined to scale at all and left the pod Pending forever
+      # (see infrastructure/INCIDENT-2026-07-29-cluster-dns.md).
+      #
+      # The trade-off of per-AZ groups is that nothing keeps them even any more —
+      # the single ASG used to do that itself. Without this flag, scale-ups pile
+      # into whichever group the expander happens to prefer and the cluster
+      # drifts lopsided, which brings back the same problem from the other side:
+      # a full AZ with a pod whose volume is stuck in it.
+      balance-similar-node-groups: true
+
       # Leaving skip-nodes-with-system-pods at its default (true): a node running
       # non-DaemonSet kube-system pods is not scaled down. coredns has 2 replicas
-      # so at most 2 nodes are ever pinned by this, and min_size is 2 — nodes
-      # above the floor still scale in normally.
+      # so at most 2 nodes are ever pinned by this, and the per-AZ minimums keep
+      # a floor in each zone — nodes above it still scale in normally.
 
       # Log at a level where scale decisions are actually readable.
       v: 4
