@@ -41,7 +41,25 @@ spec:
         name: postgres-exporter
         key: DATA_SOURCE_NAME
 
-      # Aurora forbids some collectors that assume a self-managed server.
+      # Aurora forbids some collectors that assume a self-managed server. The
+      # replication collector is one: it calls pg_last_xact_replay_timestamp()
+      # on every scrape, which Aurora rejects outright, so it failed every 30s
+      # with
+      #   pq: Function pg_last_xact_replay_timestamp() is currently not
+      #   supported for Aurora
+      # filling the pod log and never producing the metric anyway.
+      #
+      # The chart has disableCollectorDatabase/Bgwriter toggles but none for
+      # replication, so it goes through extraArgs. Flag verified against the
+      # running binary (--[no-]collector.replication) rather than assumed —
+      # postgres_exporter exits on an unknown flag, which would turn a noisy
+      # exporter into a CrashLoopBackOff.
+      #
+      # Nothing is lost by dropping it: replication lag on a managed Aurora
+      # cluster is CloudWatch's to report, not this exporter's.
+      extraArgs:
+        - --no-collector.replication
+
       disableDefaultMetrics: false
       # Per-database stats. This cluster has one database, so the cardinality
       # cost is negligible.
