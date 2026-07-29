@@ -2,7 +2,7 @@
 # logical replication slot (core_event_slot / publication core_event_pub) and
 # republishes to pgmq. No API, so no Service — health port only.
 #
-# Runs as the dedicated `core_event` Aurora role. Three pieces make CDC work on
+# Runs as the dedicated `core_event` Aurora role. Four pieces make CDC work on
 # Aurora, where the BYPASSRLS attribute the may-chang role relied on is
 # unavailable (rds_superuser can't set it):
 #   - modules/aurora-postgres sets rds.logical_replication=1 (wal_level=logical);
@@ -11,6 +11,10 @@
 #     `core_event_read` SELECT policies so enrichment reads of the RLS-protected
 #     core tables return rows. (core_event_grants only grants SELECT, which RLS
 #     alone filters to zero rows without BYPASSRLS.)
+#   - app migration 20260729000000_core_event_leader_election_grants.sql grants
+#     INSERT/UPDATE/DELETE on core.leader_election, which the pgstore election
+#     loop needs — the schema-wide SELECT is not enough and the campaign fails
+#     every tick with "permission denied for table leader_election" without it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
