@@ -128,22 +128,50 @@ spec:
     # -----------------------------------------------------------------------
     - name: lit.capacity
       rules:
-        - alert: PodPendingTooLong
-          # Cluster Autoscaler provisions a node in ~2-3 minutes. Past 5, either
-          # it has failed or it has nothing left to give.
+        - alert: PodUnschedulable
+          # UNSCHEDULABLE specifically — the scheduler cannot place this pod.
+          #
+          # This deliberately does NOT use kube_pod_status_phase{phase="Pending"}.
+          # `Pending` also covers pods the scheduler placed successfully that are
+          # still pulling an image or failing to build their container, and those
+          # need completely different advice. The first version of this rule made
+          # exactly that mistake: it fired for a postgres-exporter pod stuck in
+          # CreateContainerConfigError (a missing Secret) while telling the
+          # reader to go and investigate cluster capacity.
           expr: |
-            kube_pod_status_phase{phase="Pending"} == 1
+            kube_pod_status_unschedulable == 1
           for: 5m
           labels:
             severity: warning
             risk: "3"
           annotations:
-            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been Pending for 5 minutes"
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} cannot be scheduled"
             description: >-
-              Cluster Autoscaler has not been able to place this pod. Check whether the node
-              group is at max_size, and whether the blocker is the per-node pod ceiling
-              (17 on t3.medium with the default VPC CNI) rather than CPU or memory.
+              No node can accept this pod and Cluster Autoscaler has not fixed it within
+              5 minutes. Check whether the node group is at max_size, and whether the
+              blocker is the per-node pod ceiling rather than CPU or memory —
+              `kubectl describe pod` names the failing predicate. Note that Cluster
+              Autoscaler will NOT scale up for an unschedulable DaemonSet pod.
             runbook: "infrastructure/RISKS.md#3-node-pod-density-ceiling"
+
+        - alert: PodNotStarting
+          # Scheduled but not running: a config error, a missing Secret or
+          # ConfigMap, a bad image reference, a failing init container. Nothing
+          # to do with capacity, which is why it is a separate alert.
+          expr: |
+            kube_pod_status_phase{phase="Pending"} == 1
+            unless on (namespace, pod) kube_pod_status_unschedulable == 1
+          for: 10m
+          labels:
+            severity: warning
+            component: workloads
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} was scheduled but has not started"
+            description: >-
+              The scheduler placed this pod, so this is NOT a capacity problem. Usual
+              causes are a referenced Secret or ConfigMap that does not exist yet, an
+              image that cannot be pulled, or a container config error. Check
+              `kubectl describe pod` and the pod's events.
 
         - alert: NodeGroupAtMaxSize
           # The specific gap RISKS §3 calls out: "nothing alerts when the cluster
