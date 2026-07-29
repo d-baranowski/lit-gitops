@@ -26,6 +26,11 @@ resources:
   - helmrepo-grafana-operator.yaml
   - helmrepo-opentelemetry.yaml
 
+  # Alertmanager's Slack webhook + SES SMTP password. Must be in THIS
+  # Kustomization, not ./resources — the Alertmanager pod mounts it, so applying
+  # it later would deadlock against the HelmRelease that waits for that pod.
+  - externalsecret-alertmanager.yaml
+
   # Metrics + alerting
   - helmrelease-kube-prometheus-stack.yaml
   # Logs
