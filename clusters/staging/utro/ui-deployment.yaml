@@ -31,63 +31,63 @@ spec:
                   matchLabels:
                     app: utr-staging-ui
       containers:
-      - name: ui
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:v0.0.7 # {"$imagepolicy": "flux-system:utr-staging-ui"}
-        ports:
-        - containerPort: 3000
-          name: http
-        env:
-        - name: TIMEZONE
-          value: "Europe/Warsaw"
-        - name: NODE_ENV
-          value: "production"
-        - name: BFF_URL
-          value: "http://utr-staging-gateway.default.svc.cluster.local:9999"
-        - name: SERVICE_ENV
-          value: "staging"
-        - name: SERVICE_VERSION
-          value: "v0.0.7" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
-        - name: VERSION_CHECK_URLS
-          value: "core=utr-staging-core:18007,gateway=utr-staging-gateway:18007,payment=utr-staging-payment:18007,notification=utr-staging-notification:18007,bootstrap=utr-staging-bootstrap:18008"
-        - name: PORT
-          value: "3000"
-        - name: NEXT_TELEMETRY_DISABLED
-          value: "1"
-        - name: NEXT_PUBLIC_OTEL_ENABLED
-          value: "true"
-        - name: NEXT_PUBLIC_OTEL_ENDPOINT
-          value: "/otel/v1/traces"
-        - name: NEXT_PUBLIC_SERVICE_ENV
-          value: "staging"
-        - name: OTEL_COLLECTOR_URL
-          value: "http://otel-collector.observability.svc.cluster.local:4318"
-        # No Cloudflare Access in this deployment — login goes through the app's
-        # own path (see the core.bypass RLS path), so the CF Access JWT env
-        # (CF_TEAM_DOMAIN / CF_JWT_ISSUER / CF_JWT_AUDIENCE) is intentionally omitted.
-        livenessProbe:
-          httpGet:
-            path: /api/health
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /api/ready
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        # Sized from a k6 stress run (60 VU, utro-load.js, 2026-07-29), not from
-        # idle: cpu p95 was 156m under load, the highest of any utro workload (SSR).
-        # Memory peaked at 230Mi; request is that x1.5, rounded up.
-        #
-        # No cpu limit, deliberately — a limit throttles the container instead of
-        # letting utilization rise and trip the HPA, which is the whole mechanism.
-        # Memory is incompressible so it does get one. Requests are also what
-        # makes this pod Burstable rather than BestEffort (BestEffort is first in
-        # line for eviction) and what Cluster Autoscaler sizes nodes against.
-        resources:
-          requests:
-            cpu: 175m
-            memory: 384Mi
-          limits:
-            memory: 768Mi
+        - name: ui
+          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-ui:v0.0.8 # {"$imagepolicy": "flux-system:utr-staging-ui"}
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: TIMEZONE
+              value: "Europe/Warsaw"
+            - name: NODE_ENV
+              value: "production"
+            - name: BFF_URL
+              value: "http://utr-staging-gateway.default.svc.cluster.local:9999"
+            - name: SERVICE_ENV
+              value: "staging"
+            - name: SERVICE_VERSION
+              value: "v0.0.8" # {"$imagepolicy": "flux-system:utr-staging-ui:tag"}
+            - name: VERSION_CHECK_URLS
+              value: "core=utr-staging-core:18007,gateway=utr-staging-gateway:18007,payment=utr-staging-payment:18007,notification=utr-staging-notification:18007,bootstrap=utr-staging-bootstrap:18008"
+            - name: PORT
+              value: "3000"
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+            - name: NEXT_PUBLIC_OTEL_ENABLED
+              value: "true"
+            - name: NEXT_PUBLIC_OTEL_ENDPOINT
+              value: "/otel/v1/traces"
+            - name: NEXT_PUBLIC_SERVICE_ENV
+              value: "staging"
+            - name: OTEL_COLLECTOR_URL
+              value: "http://otel-collector.observability.svc.cluster.local:4318"
+          # No Cloudflare Access in this deployment — login goes through the app's
+          # own path (see the core.bypass RLS path), so the CF Access JWT env
+          # (CF_TEAM_DOMAIN / CF_JWT_ISSUER / CF_JWT_AUDIENCE) is intentionally omitted.
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          # Sized from a k6 stress run (60 VU, utro-load.js, 2026-07-29), not from
+          # idle: cpu p95 was 156m under load, the highest of any utro workload (SSR).
+          # Memory peaked at 230Mi; request is that x1.5, rounded up.
+          #
+          # No cpu limit, deliberately — a limit throttles the container instead of
+          # letting utilization rise and trip the HPA, which is the whole mechanism.
+          # Memory is incompressible so it does get one. Requests are also what
+          # makes this pod Burstable rather than BestEffort (BestEffort is first in
+          # line for eviction) and what Cluster Autoscaler sizes nodes against.
+          resources:
+            requests:
+              cpu: 175m
+              memory: 384Mi
+            limits:
+              memory: 768Mi

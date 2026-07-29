@@ -31,89 +31,89 @@ spec:
                   matchLabels:
                     app: utr-staging-core
       containers:
-      - name: core
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.7 # {"$imagepolicy": "flux-system:utr-staging-core"}
-        ports:
-        - containerPort: 9102
-          name: api
-        - containerPort: 18007
-          name: health
-        env:
-        - name: TIMEZONE
-          value: "Europe/Warsaw"
-        - name: PAYMENT_SERVICE_URL
-          value: "http://utr-staging-payment.default.svc.cluster.local:9102"
-        - name: PAYMENT_SERVICE_CLIENT_TIMEOUT_MS
-          value: "10000"
-        - name: HEALTH_PORT
-          value: "18007"
-        - name: API_PORT
-          value: "9102"
-        - name: LOG_LEVEL
-          value: "debug"
-        - name: RPG_PERMISSIONS_FLAG
-          value: "true"
-        - name: SERVICE_VERSION
-          value: "v0.0.7" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
-        - name: SERVICE_NAME
-          value: "rpg.core"
-        - name: SERVICE_ENV
-          value: "staging"
-        - name: TR_ENABLED
-          value: "true"
-        - name: TR_ENDPOINT
-          value: "otel-collector.observability.svc.cluster.local:4318"
-        - name: TR_HTTPS
-          value: "false"
-        - name: ENABLE_DEV_API
-          value: "true"
-        - name: DB_TRACE
-          value: "true"
-        - name: DB_SSL
-          value: "true"
-        - name: DB_NAME
-          value: "utro"
-        - name: DB_PORT
-          value: "5432"
-        - name: DB_HOST
-          valueFrom:
-            secretKeyRef:
-              name: db-app
-              key: host
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-app
-              key: username
-        - name: DB_PASS
-          valueFrom:
-            secretKeyRef:
-              name: db-app
-              key: password
-        livenessProbe:
-          httpGet:
-            path: /live
-            port: health
-          initialDelaySeconds: 60
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: health
-          initialDelaySeconds: 60
-          periodSeconds: 5
-        # Sized from a k6 stress run (60 VU, utro-load.js, 2026-07-29), not from
-        # idle: cpu p95 was 109m under load against ~2m at rest, a 50x difference.
-        # Memory peaked at 295Mi under load; request is that x1.5.
-        #
-        # No cpu limit, deliberately — a limit throttles the container instead of
-        # letting utilization rise and trip the HPA, which is the whole mechanism.
-        # Memory is incompressible so it does get one. Requests are also what
-        # makes this pod Burstable rather than BestEffort (BestEffort is first in
-        # line for eviction) and what Cluster Autoscaler sizes nodes against.
-        resources:
-          requests:
-            cpu: 125m
-            memory: 448Mi
-          limits:
-            memory: 896Mi
+        - name: core
+          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core:v0.0.8 # {"$imagepolicy": "flux-system:utr-staging-core"}
+          ports:
+            - containerPort: 9102
+              name: api
+            - containerPort: 18007
+              name: health
+          env:
+            - name: TIMEZONE
+              value: "Europe/Warsaw"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://utr-staging-payment.default.svc.cluster.local:9102"
+            - name: PAYMENT_SERVICE_CLIENT_TIMEOUT_MS
+              value: "10000"
+            - name: HEALTH_PORT
+              value: "18007"
+            - name: API_PORT
+              value: "9102"
+            - name: LOG_LEVEL
+              value: "debug"
+            - name: RPG_PERMISSIONS_FLAG
+              value: "true"
+            - name: SERVICE_VERSION
+              value: "v0.0.8" # {"$imagepolicy": "flux-system:utr-staging-core:tag"}
+            - name: SERVICE_NAME
+              value: "rpg.core"
+            - name: SERVICE_ENV
+              value: "staging"
+            - name: TR_ENABLED
+              value: "true"
+            - name: TR_ENDPOINT
+              value: "otel-collector.observability.svc.cluster.local:4318"
+            - name: TR_HTTPS
+              value: "false"
+            - name: ENABLE_DEV_API
+              value: "true"
+            - name: DB_TRACE
+              value: "true"
+            - name: DB_SSL
+              value: "true"
+            - name: DB_NAME
+              value: "utro"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: db-app
+                  key: host
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-app
+                  key: username
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: db-app
+                  key: password
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: health
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 60
+            periodSeconds: 5
+          # Sized from a k6 stress run (60 VU, utro-load.js, 2026-07-29), not from
+          # idle: cpu p95 was 109m under load against ~2m at rest, a 50x difference.
+          # Memory peaked at 295Mi under load; request is that x1.5.
+          #
+          # No cpu limit, deliberately — a limit throttles the container instead of
+          # letting utilization rise and trip the HPA, which is the whole mechanism.
+          # Memory is incompressible so it does get one. Requests are also what
+          # makes this pod Burstable rather than BestEffort (BestEffort is first in
+          # line for eviction) and what Cluster Autoscaler sizes nodes against.
+          resources:
+            requests:
+              cpu: 125m
+              memory: 448Mi
+            limits:
+              memory: 896Mi
