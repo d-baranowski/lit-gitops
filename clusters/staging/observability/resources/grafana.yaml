@@ -89,6 +89,14 @@ spec:
       replicas: 1
       template:
         spec:
+          # Replaces the operator's default emptyDir of the same name with the
+          # PVC from spec.persistentVolumeClaim. Both halves are required: the
+          # volume here and the volumeMount on the container below. See the
+          # comment there for what breaks without them.
+          volumes:
+            - name: grafana-data
+              persistentVolumeClaim:
+                claimName: grafana-pvc
           containers:
             - name: grafana
               # Both of these are grafana.ini settings delivered as env vars
@@ -138,6 +146,29 @@ spec:
               envFrom:
                 - secretRef:
                     name: grafana-access-jwt
+              # MOUNT THE PVC OVER THE OPERATOR'S DEFAULT emptyDir.
+              #
+              # spec.persistentVolumeClaim (below) only CREATES the PVC — the
+              # operator does not attach it. Left alone, `grafana-data` is an
+              # emptyDir and Grafana's SQLite database lives in the pod:
+              #
+              #   grafana-pvc   Pending   gp3   169m
+              #   WaitForFirstConsumer (x662 over 168m)
+              #     -> waiting for first consumer to be created before binding
+              #
+              # A deadlock, since gp3 is WaitForFirstConsumer and no pod ever
+              # references the claim. Meanwhile every restart wiped Grafana's
+              # database, and the operator — which caches a hash per CR and had
+              # recorded the folders as ApplySuccessful — never recreated them.
+              # All 8 dashboards then failed with:
+              #   POST /dashboards/db [400] {"message":"folder not found"}
+              #
+              # Datasources and dashboards are reconciled from CRs so they come
+              # back, but users, preferences, starred dashboards, annotations and
+              # alert silences are Grafana-side state and were lost each restart.
+              volumeMounts:
+                - name: grafana-data
+                  mountPath: /var/lib/grafana
               resources:
                 requests:
                   cpu: 100m
