@@ -34,7 +34,7 @@
     {
       "type": "timeseries",
       "title": "CPU usage by service",
-      "description": "Cores consumed, summed across all replicas of each workload. 1.0 = one full core.",
+      "description": "CPU cores consumed, summed across all replicas of the workload. 1 core = 1 full CPU. A t3.medium node has 2 cores, so 0.5 here is a quarter of one node. Not a percentage \u2014 see 'CPU vs requests' for that.",
       "id": 2,
       "gridPos": {
         "h": 9,
@@ -61,7 +61,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "suffix: cores",
           "min": 0,
           "custom": {
             "drawStyle": "line",
@@ -101,7 +101,7 @@
     {
       "type": "table",
       "title": "CPU vs requests",
-      "description": "Usage as a percentage of the CPU request. Over 100% is not an error \u2014 it means the workload is using burst capacity that is not reserved for it.",
+      "description": "Cores used as a percentage of the cores REQUESTED. 100% means the workload is using exactly what the scheduler reserved for it. Above 100% is not an error \u2014 CPU is compressible, so it is borrowing idle capacity it has no guarantee of keeping. Sustained above 100% means the request is set too low.",
       "id": 3,
       "gridPos": {
         "h": 9,
@@ -193,7 +193,7 @@
     {
       "type": "timeseries",
       "title": "CPU throttling by service",
-      "description": "Seconds per second spent throttled against the CPU limit. Anything sustained above zero means the limit is actively slowing the service. Empty is normal here: this metric only exists for containers that set a CPU limit, and most workloads in this cluster set requests only.",
+      "description": "Percentage of time the workload spent throttled against its CPU LIMIT \u2014 20% means one second in five was spent waiting for CPU it was not allowed to use. Anything sustained above zero means the limit is actively slowing the service.\n\nEXPECTED TO BE EMPTY on this cluster: the underlying metric only exists for containers that set a CPU limit, and these workloads set requests only. No data here means 'no limits configured', not 'no throttling'.",
       "id": 4,
       "gridPos": {
         "h": 8,
@@ -273,7 +273,7 @@
     {
       "type": "timeseries",
       "title": "Memory usage by service",
-      "description": "Working set \u2014 what the kernel cannot reclaim under pressure. This is the number the OOM killer acts on, not container_memory_usage_bytes.",
+      "description": "Memory in use, summed across all replicas of the workload.\n\nThis is the WORKING SET: memory the kernel cannot reclaim under pressure. It is deliberately not container_memory_usage_bytes, which includes reclaimable page cache and so overstates real usage. The working set is the number the OOM killer compares against the limit.",
       "id": 6,
       "gridPos": {
         "h": 9,
@@ -340,7 +340,7 @@
     {
       "type": "table",
       "title": "Memory vs limits",
-      "description": "Working set as a percentage of the memory limit. Unlike CPU this is a hard ceiling: reaching 100% is an OOMKill, so treat sustained red as an imminent restart.",
+      "description": "Memory in use as a percentage of the memory LIMIT.\n\nUnlike CPU, this is a hard ceiling \u2014 memory is not compressible, so reaching 100% is an OOMKill and a restart, not a slowdown. Treat sustained red as an imminent restart. Blank rows are workloads with no memory limit set, which cannot be OOMKilled by their own limit but can still be evicted under node pressure.",
       "id": 7,
       "gridPos": {
         "h": 9,
@@ -431,8 +431,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Memory usage vs requests and limits",
-      "description": "Same series as above, kept separate so it can be compared against the allocation lines without the legend table crowding the plot.",
+      "title": "Memory headroom before OOMKill",
+      "description": "Bytes remaining before the memory limit is hit, per workload.\n\nA series trending toward zero is heading for an OOMKill \u2014 this is the same information as 'Memory vs limits' but as an absolute amount, which is easier to reason about when sizing a limit.\n\nWorkloads with no memory limit set are absent from this panel by design: they have no ceiling to run out of.",
       "id": 8,
       "gridPos": {
         "h": 8,
@@ -450,7 +450,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (workload) (\n  container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\", container!=\"POD\", pod=~\".+\"}\n  * on (namespace, pod) group_left(workload) (\n    label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)-[^-]+$\") or label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind!=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)$\")\n  )\n)",
+          "expr": "sum by (workload) (\n  kube_pod_container_resource_limits{namespace=~\"$namespace\", resource=\"memory\"}\n  * on (namespace, pod) group_left(workload) (\n    label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)-[^-]+$\") or label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind!=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)$\")\n  )\n)\n-\nsum by (workload) (\n  container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\", container!=\"POD\", pod=~\".+\"}\n  * on (namespace, pod) group_left(workload) (\n    label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)-[^-]+$\") or label_replace(kube_pod_owner{namespace=~\"$namespace\", owner_kind!=\"ReplicaSet\"}, \"workload\", \"$1\", \"owner_name\", \"^(.+)$\")\n  )\n)",
           "legendFormat": "{{workload}}",
           "refId": "A",
           "editorMode": "code",
@@ -499,7 +499,7 @@
     {
       "type": "timeseries",
       "title": "Container restarts by service",
-      "description": "Restarts per interval. Correlate a step here with the memory panel above \u2014 a restart following a climb to the limit is an OOMKill.",
+      "description": "Container restarts, counted per graph interval rather than as a running total, so each spike is one restart event.\n\nLine up a spike here with 'Memory headroom' to the left: a restart immediately after headroom reached zero is an OOMKill. A restart with headroom to spare is a crash or a failed probe instead.",
       "id": 9,
       "gridPos": {
         "h": 8,
@@ -526,7 +526,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: restarts",
           "min": 0,
           "custom": {
             "drawStyle": "line",

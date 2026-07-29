@@ -155,9 +155,14 @@ panels.append(row("CPU", 1, 0))
 panels.append(timeseries(
     "CPU usage by service",
     join(f'rate(container_cpu_usage_seconds_total{{{CONTAINER_SEL}}}[$__rate_interval])'),
-    "percentunit", 2, {"h": 9, "w": 16, "x": 0, "y": 1},
-    desc="Cores consumed, summed across all replicas of each workload. "
-         "1.0 = one full core.",
+    # CORES, not a percentage. The metric is a rate of cpu-seconds per second,
+    # which IS a core count: 0.25 = a quarter of one core. Grafana has no
+    # built-in cores unit, so use a custom suffix — "percentunit" would render
+    # 0.25 as "25%", which reads as a proportion of something it is not.
+    "suffix: cores", 2, {"h": 9, "w": 16, "x": 0, "y": 1},
+    desc="CPU cores consumed, summed across all replicas of the workload. "
+         "1 core = 1 full CPU. A t3.medium node has 2 cores, so 0.5 here is a "
+         "quarter of one node. Not a percentage — see 'CPU vs requests' for that.",
 ))
 
 panels.append(gauge_table(
@@ -171,18 +176,26 @@ panels.append(gauge_table(
     + "\n/\n"
     + join(f'kube_pod_container_resource_requests{{namespace=~"$namespace", resource="cpu"}}'),
     3, {"h": 9, "w": 8, "x": 16, "y": 1},
-    desc="Usage as a percentage of the CPU request. Over 100% is not an error — "
-         "it means the workload is using burst capacity that is not reserved for it.",
+    desc="Cores used as a percentage of the cores REQUESTED. 100% means the "
+         "workload is using exactly what the scheduler reserved for it. Above "
+         "100% is not an error — CPU is compressible, so it is borrowing idle "
+         "capacity it has no guarantee of keeping. Sustained above 100% means "
+         "the request is set too low.",
 ))
 
 panels.append(timeseries(
     "CPU throttling by service",
     join(f'rate(container_cpu_cfs_throttled_seconds_total{{{CONTAINER_SEL}}}[$__rate_interval])'),
+    # Genuinely a ratio here: seconds throttled per second elapsed, 0-1.
     "percentunit", 4, {"h": 8, "w": 24, "x": 0, "y": 10},
-    desc="Seconds per second spent throttled against the CPU limit. Anything "
-         "sustained above zero means the limit is actively slowing the service. "
-         "Empty is normal here: this metric only exists for containers that set "
-         "a CPU limit, and most workloads in this cluster set requests only.",
+    desc="Percentage of time the workload spent throttled against its CPU "
+         "LIMIT — 20% means one second in five was spent waiting for CPU it was "
+         "not allowed to use. Anything sustained above zero means the limit is "
+         "actively slowing the service.\n\n"
+         "EXPECTED TO BE EMPTY on this cluster: the underlying metric only "
+         "exists for containers that set a CPU limit, and these workloads set "
+         "requests only. No data here means 'no limits configured', not "
+         "'no throttling'.",
 ))
 
 # --- Memory ----------------------------------------------------------------
@@ -192,8 +205,11 @@ panels.append(timeseries(
     "Memory usage by service",
     join(f'container_memory_working_set_bytes{{{CONTAINER_SEL}}}'),
     "bytes", 6, {"h": 9, "w": 16, "x": 0, "y": 19},
-    desc="Working set — what the kernel cannot reclaim under pressure. This is "
-         "the number the OOM killer acts on, not container_memory_usage_bytes.",
+    desc="Memory in use, summed across all replicas of the workload.\n\n"
+         "This is the WORKING SET: memory the kernel cannot reclaim under "
+         "pressure. It is deliberately not container_memory_usage_bytes, which "
+         "includes reclaimable page cache and so overstates real usage. The "
+         "working set is the number the OOM killer compares against the limit.",
 ))
 
 panels.append(gauge_table(
@@ -205,26 +221,41 @@ panels.append(gauge_table(
     + "\n/\n"
     + join(f'kube_pod_container_resource_limits{{namespace=~"$namespace", resource="memory"}}'),
     7, {"h": 9, "w": 8, "x": 16, "y": 19},
-    desc="Working set as a percentage of the memory limit. Unlike CPU this is a "
-         "hard ceiling: reaching 100% is an OOMKill, so treat sustained red as "
-         "an imminent restart.",
+    desc="Memory in use as a percentage of the memory LIMIT.\n\n"
+         "Unlike CPU, this is a hard ceiling — memory is not compressible, so "
+         "reaching 100% is an OOMKill and a restart, not a slowdown. Treat "
+         "sustained red as an imminent restart. Blank rows are workloads with "
+         "no memory limit set, which cannot be OOMKilled by their own limit but "
+         "can still be evicted under node pressure.",
     thresholds=(75, 90),
 ))
 
 panels.append(timeseries(
-    "Memory usage vs requests and limits",
-    join(f'container_memory_working_set_bytes{{{CONTAINER_SEL}}}'),
+    "Memory headroom before OOMKill",
+    # limit - usage, so the y-axis is "how much room is left" and a series
+    # trending toward zero is a restart about to happen. Workloads with no
+    # limit drop out of the join entirely rather than showing a false infinity.
+    join(f'kube_pod_container_resource_limits{{namespace=~"$namespace", resource="memory"}}')
+    + "\n-\n"
+    + join(f'container_memory_working_set_bytes{{{CONTAINER_SEL}}}'),
     "bytes", 8, {"h": 8, "w": 12, "x": 0, "y": 28},
-    desc="Same series as above, kept separate so it can be compared against the "
-         "allocation lines without the legend table crowding the plot.",
+    desc="Bytes remaining before the memory limit is hit, per workload.\n\n"
+         "A series trending toward zero is heading for an OOMKill — this is the "
+         "same information as 'Memory vs limits' but as an absolute amount, "
+         "which is easier to reason about when sizing a limit.\n\n"
+         "Workloads with no memory limit set are absent from this panel by "
+         "design: they have no ceiling to run out of.",
 ))
 
 panels.append(timeseries(
     "Container restarts by service",
     join(f'increase(kube_pod_container_status_restarts_total{{namespace=~"$namespace"}}[$__rate_interval])'),
-    "short", 9, {"h": 8, "w": 12, "x": 12, "y": 28},
-    desc="Restarts per interval. Correlate a step here with the memory panel "
-         "above — a restart following a climb to the limit is an OOMKill.",
+    "suffix: restarts", 9, {"h": 8, "w": 12, "x": 12, "y": 28},
+    desc="Container restarts, counted per graph interval rather than as a "
+         "running total, so each spike is one restart event.\n\n"
+         "Line up a spike here with 'Memory headroom' to the left: a restart "
+         "immediately after headroom reached zero is an OOMKill. A restart with "
+         "headroom to spare is a crash or a failed probe instead.",
 ))
 
 dashboard = {
