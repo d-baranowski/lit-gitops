@@ -164,9 +164,23 @@ spec:
 
               // ecszap emits CAPITALS; Loki's own detected_level values are
               // lowercase, and the dashboard filters on the lowercase form.
+              //
+              // The backtick wrapper is load-bearing. The chart renders
+              // configMap.content through Helm's `tpl`, so Go template syntax in
+              // this file is evaluated by HELM first, and ToLower is an Alloy
+              // template function that Helm/sprig does not have. Unescaped, the
+              // release fails to render at all:
+              //
+              //   template: gotpl:100: function "ToLower" not defined
+              //
+              // and because that is a templating error rather than a runtime one,
+              // it takes down the whole HelmRelease — not just this stage.
+              // `{{ ` + backticks + ` }}` makes Helm emit the inner text
+              // verbatim, so Alloy receives {{ ToLower .Value }} and evaluates it
+              // itself at ingest time.
               stage.template {
                 source   = "level"
-                template = "{{ ToLower .Value }}"
+                template = "{{ `{{ ToLower .Value }}` }}"
               }
 
               // Structured metadata, not a Loki LABEL: a label would multiply
