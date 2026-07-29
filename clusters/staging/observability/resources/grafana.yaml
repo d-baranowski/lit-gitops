@@ -89,6 +89,21 @@ spec:
       replicas: 1
       template:
         spec:
+          # A freshly provisioned EBS volume is owned by root, but the operator
+          # runs Grafana as UID/GID 10001 with runAsNonRoot. Without fsGroup the
+          # container starts and immediately dies:
+          #
+          #   GF_PATHS_DATA='/var/lib/grafana' is not writable.
+          #   mkdir: can't create directory '/var/lib/grafana/plugins': Permission denied
+          #
+          # fsGroup makes the kubelet chown the volume to that GID at mount time.
+          # It only matters once the PVC is actually attached — which is why this
+          # surfaced only after the volume fix below, not before.
+          securityContext:
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+
           # Replaces the operator's default emptyDir of the same name with the
           # PVC from spec.persistentVolumeClaim. Both halves are required: the
           # volume here and the volumeMount on the container below. See the
