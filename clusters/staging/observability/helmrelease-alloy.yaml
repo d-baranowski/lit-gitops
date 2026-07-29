@@ -120,15 +120,62 @@ spec:
 
           // Reads through the Kubernetes API rather than tailing /var/log/pods,
           // so Alloy needs no hostPath mount and no privileged securityContext.
-          //
-          // No processing stages: log levels are not parsed here. Loki derives
-          // `detected_level` itself (limits_config.discover_log_levels, on by
-          // default with structured metadata), which is the field the
-          // utro-error-logs dashboard filters on. Extracting a level into a Loki
-          // LABEL instead would multiply the stream count for no benefit.
           loki.source.kubernetes "pod_logs" {
             targets    = discovery.relabel.pod_logs.output
+            forward_to = [loki.process.levels.receiver]
+          }
+
+          // Extracts the log level for the utro services, which log ECS via
+          // go.elastic.co/ecszap and so put it under the flat, dotted key
+          // "log.level".
+          //
+          // Loki would otherwise derive `detected_level` itself
+          // (limits_config.discover_log_levels, on by default), but its
+          // discovery only inspects a fixed allowlist of TOP-LEVEL JSON keys —
+          // level / severity / lvl and case variants. A dotted key matches none
+          // of them, so it falls through to a substring scan of the raw line,
+          // where any query selecting the `payment_link.error_message` column
+          // reads as an error. That silently inflated the utro-error-logs
+          // dashboard with DEBUG-level SQL traces.
+          //
+          // Loki skips its own discovery when the push already carries a level,
+          // so this wins without disabling discover_log_levels — lines this
+          // stage can't parse (infra components, Alloy's own logfmt) keep the
+          // built-in behaviour.
+          loki.process "levels" {
             forward_to = [loki.write.default.receiver]
+
+            // The guard matters: stage.template CREATES its source key when the
+            // key is absent, so running these stages unconditionally would stamp
+            // an empty detected_level on every non-ECS line — infra components,
+            // Alloy's own logfmt — and an empty level is worse than none, since
+            // it also suppresses Loki's own discovery. `|=` is a literal
+            // substring match, so the dot needs no regex escaping. namespace is
+            // set by discovery.relabel above for every target, whereas
+            // service_name is empty for pods without an `app` label.
+            stage.match {
+              selector = "{namespace=~\".+\"} |= \"log.level\""
+
+              // JMESPath: a key containing a dot has to be quoted, or it parses
+              // as a nested `level` under `log`.
+              stage.json {
+                expressions = { level = "\"log.level\"" }
+              }
+
+              // ecszap emits CAPITALS; Loki's own detected_level values are
+              // lowercase, and the dashboard filters on the lowercase form.
+              stage.template {
+                source   = "level"
+                template = "{{ ToLower .Value }}"
+              }
+
+              // Structured metadata, not a Loki LABEL: a label would multiply
+              // the stream count for no query benefit, and `detected_level` is
+              // already what the dashboards filter on.
+              stage.structured_metadata {
+                values = { detected_level = "level" }
+              }
+            }
           }
 
           loki.write "default" {
