@@ -309,6 +309,99 @@ spec:
               every utro Deployment.
 
     # -----------------------------------------------------------------------
+    # Database health.
+    #
+    # Added after 2026-07-29, when a connection-pool self-deadlock in core left
+    # 50 sessions `idle in transaction` and wedged login for hours. Nothing
+    # detected it — there was no database observability of any kind, and the
+    # only way to find it was to open psql by hand. Every rule here exists to
+    # make that specific failure visible within minutes.
+    #
+    # Requires prometheus-postgres-exporter (observability/helmrelease-postgres-exporter.yaml),
+    # which connects as the pg_monitor-granted `exporter` role — without that
+    # grant `state` is NULL for other sessions and these alerts would read as
+    # permanently healthy.
+    # -----------------------------------------------------------------------
+    - name: lit.postgres
+      rules:
+        - alert: PostgresIdleInTransaction
+          # THE alert for the 2026-07-29 outage. Connections parked mid
+          # transaction are unavailable to everyone else, so this saturates the
+          # application's pool long before Postgres itself looks busy.
+          expr: |
+            sum(pg_stat_activity_count{state="idle in transaction"}) > 10
+          for: 5m
+          labels:
+            severity: critical
+            component: database
+          annotations:
+            summary: "{{ $value }} Postgres connections stuck idle in transaction"
+            description: >-
+              Connections are being held mid-transaction and not returned. This is the
+              signature of an application connection leak or a pool self-deadlock, and it
+              will exhaust the pool and hang logins. Confirm with:
+              select state, count(*) from pg_stat_activity where datname='utro' group by state;
+              Aurora's idle_in_transaction_session_timeout (60s) should reclaim these — if
+              this alert is firing, they are being created faster than they are reclaimed.
+
+        - alert: PostgresLongTransaction
+          # Catches the leak forming, before enough have accumulated to matter.
+          expr: |
+            max(pg_stat_activity_max_tx_duration) > 300
+          for: 5m
+          labels:
+            severity: warning
+            component: database
+          annotations:
+            summary: "A Postgres transaction has been open for over 5 minutes"
+            description: >-
+              Long-lived transactions hold their connection and block vacuum. Legitimate
+              migrations can trip this; a steady stream of them is a leak.
+
+        - alert: PostgresConnectionsHigh
+          expr: |
+            sum(pg_stat_activity_count) / on() max(pg_settings_max_connections) > 0.7
+          for: 10m
+          labels:
+            severity: warning
+            component: database
+          annotations:
+            summary: "Postgres is above 70% of max_connections"
+            description: >-
+              Aurora Serverless v2 scales max_connections with ACUs, so this can also mean
+              the cluster scaled DOWN rather than that load went up.
+
+        - alert: CoreDbPoolStarved
+          # The EARLIEST signal of the 2026-07-29 failure. Pool waits begin the
+          # moment the deadlock starts — well before Postgres looks unusual,
+          # because from the database's point of view 50 idle connections are
+          # not a problem. This is the app noticing it cannot get one.
+          #
+          # The app already exports this via OTel (pkg/database/postgres/pool_metrics.go
+          # publishes db.pool.acquire.wait_count from sql.DB.Stats()), routed
+          # through the collector's prometheusremotewrite exporter. Nothing has
+          # ever consumed it.
+          #
+          # VERIFY THE METRIC NAME on first reconcile — OTel-to-Prometheus
+          # translation may render it db_pool_acquire_wait_count_total or carry a
+          # different suffix. A rule referencing a name that does not exist never
+          # fires, which is indistinguishable from healthy:
+          #   curl -s localhost:9090/api/v1/label/__name__/values | tr ',' '\n' | grep pool
+          expr: |
+            sum(rate(db_pool_acquire_wait_count_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: database
+          annotations:
+            summary: "core is waiting for database connections"
+            description: >-
+              Requests are queueing for a pooled connection rather than getting one
+              immediately. Sustained waits mean the pool (DB_MAX_OPEN_CONNECTIONS, default
+              25) is saturated — either genuine load, or connections being held by
+              something that is not returning them.
+
+    # -----------------------------------------------------------------------
     # The monitoring stack watching itself. Without this, everything above fails
     # open: a dead Alloy or a Loki rejecting writes looks exactly like silence.
     # -----------------------------------------------------------------------

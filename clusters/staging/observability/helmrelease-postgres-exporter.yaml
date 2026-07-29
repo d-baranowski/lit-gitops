@@ -1,0 +1,76 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: postgres-exporter
+  namespace: observability
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: prometheus-postgres-exporter
+      version: "8.2.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  install:
+    timeout: 10m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 10m
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    # Exists because of the 2026-07-29 outage: a connection-pool self-deadlock in
+    # utro's core service left 50 sessions `idle in transaction` and wedged
+    # login for hours, and NOTHING saw it. There was no database observability of
+    # any kind — no exporter, no RDS alarms, no pg_stat_activity anywhere — so
+    # the only way to find it was to open psql by hand.
+    #
+    # The alerts that consume this live in
+    # observability/resources/prometheusrule-lit-risks.yaml (group lit.postgres).
+    fullnameOverride: postgres-exporter
+
+    config:
+      # Connection string comes from the ExternalSecret in this directory, which
+      # uses the pg_monitor-granted `exporter` role. See that file for why the
+      # role matters.
+      datasourceSecret:
+        name: postgres-exporter
+        key: DATA_SOURCE_NAME
+
+      # Aurora forbids some collectors that assume a self-managed server.
+      disableDefaultMetrics: false
+      # Per-database stats. This cluster has one database, so the cardinality
+      # cost is negligible.
+      disableSettingsMetrics: false
+
+      # pg_stat_activity by state is THE metric for this incident class: it is
+      # what makes `idle in transaction` countable and therefore alertable.
+      autoDiscoverDatabases: false
+
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+
+    # One replica. The exporter is stateless and its own unavailability is
+    # covered by Prometheus' `up` metric; two would just double the connections
+    # held against a database that is already the scarce resource.
+    replicaCount: 1
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]

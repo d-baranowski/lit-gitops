@@ -45,3 +45,7 @@ resources:
   - helmrelease-grafana-operator.yaml
   # Synthetic probing of the public endpoint (RISKS.md §5)
   - helmrelease-blackbox-exporter.yaml
+  # Database observability. Added after the 2026-07-29 pool-deadlock outage,
+  # which nothing detected because there were no database metrics at all.
+  - externalsecret-postgres-exporter.yaml
+  - helmrelease-postgres-exporter.yaml
