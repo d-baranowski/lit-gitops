@@ -27,7 +27,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: migrate
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment:v0.0.8 # {"$imagepolicy": "flux-system:utr-staging-payment"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-payment:v0.0.9 # {"$imagepolicy": "flux-system:utr-staging-payment"}
         command: ["/app/payment"]
         args: ["-migrate=true"]
         env:
