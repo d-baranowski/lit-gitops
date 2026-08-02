@@ -475,3 +475,51 @@ spec:
             description: >-
               Grafana is exposed only through the tunnel. Break-glass is the bastion:
               kubectl -n observability port-forward svc/grafana-service 3000:3000
+
+        # The guard on the configSecret mechanism. Alertmanager's config is
+        # rendered by the alertmanager-config ExternalSecret so the SES SMTP
+        # username can come from Secrets Manager instead of git — but the
+        # operator's contract for a missing/incomplete configSecret is to install
+        # a minimal config with one empty receiver. Alertmanager then reports
+        # healthy while discarding every notification, and no other alert here
+        # would notice, because the thing that delivers them is what broke.
+        #
+        # ESO stops updating the Secret before it can go stale, so a sync failure
+        # is the earliest observable signal. deletionPolicy: Retain means the
+        # Secret survives the failure; this fires so the drift gets fixed while
+        # the last-good config is still mounted.
+        - alert: AlertmanagerConfigNotRendered
+          expr: |
+            externalsecret_status_condition{name="alertmanager-config", condition="Ready", status="False"} == 1
+            or
+            absent(externalsecret_status_condition{name="alertmanager-config", condition="Ready"})
+          for: 15m
+          labels:
+            severity: critical
+            component: observability
+          annotations:
+            summary: "Alertmanager's config ExternalSecret is not syncing — alert delivery is at risk"
+            description: >-
+              alertmanager-config has stopped reconciling against lit/staging/alerting. The
+              mounted config is retained, so delivery is probably still working, but if that
+              Secret is lost or emptied the operator falls back to one empty receiver and
+              alerting stops with no further warning. Check:
+              kubectl -n observability describe externalsecret alertmanager-config
+              and confirm the Secret still holds an alertmanager.yaml key.
+
+        # Pairs with the above: catches the case where the config IS mounted but
+        # Alertmanager rejected it, which the ESO metric cannot see.
+        - alert: AlertmanagerConfigRejected
+          expr: |
+            max_over_time(alertmanager_config_last_reload_successful[10m]) == 0
+          for: 10m
+          labels:
+            severity: critical
+            component: observability
+          annotations:
+            summary: "Alertmanager rejected its configuration"
+            description: >-
+              The rendered alertmanager.yaml failed to load, so Alertmanager is running on
+              its previous config or on the operator's empty-receiver fallback. Most likely
+              a templating mistake in externalsecret-alertmanager-config.yaml — render it
+              locally before pushing again.

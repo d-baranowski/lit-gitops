@@ -30,6 +30,11 @@ resources:
   # Kustomization, not ./resources — the Alertmanager pod mounts it, so applying
   # it later would deadlock against the HelmRelease that waits for that pod.
   - externalsecret-alertmanager.yaml
+  # Alertmanager's whole config, carrying the SES SMTP username from Secrets
+  # Manager. Same Kustomization for the same reason, but the failure mode is
+  # worse: if this Secret is absent the operator substitutes an empty receiver
+  # and alerting stops silently. See the file header.
+  - externalsecret-alertmanager-config.yaml
 
   # Metrics + alerting
   - helmrelease-kube-prometheus-stack.yaml

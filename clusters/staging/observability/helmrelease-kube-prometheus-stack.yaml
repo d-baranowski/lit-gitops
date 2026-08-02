@@ -131,107 +131,20 @@ spec:
                   storage: 2Gi
         # Mounts the ExternalSecret at
         #   /etc/alertmanager/secrets/alertmanager-receivers/<key>
-        # referenced below by slack_api_url_file and smtp_auth_password_file.
-        # The Secret is created in THIS Kustomization (externalsecret-alertmanager.yaml)
-        # — the pod will not start without it, so it cannot live in ./resources.
+        # referenced by slack_api_url_file and smtp_auth_password_file in the
+        # config. The Secret is created in THIS Kustomization
+        # (externalsecret-alertmanager.yaml) — the pod will not start without it,
+        # so it cannot live in ./resources.
         secrets:
           - alertmanager-receivers
 
-      # Replaces the chart's default config WHOLESALE. Everything the default
-      # provided has to be reproduced here — see the Watchdog route and the four
-      # inhibit_rules below, both of which are load-bearing.
-      config:
-        global:
-          resolve_timeout: 5m
-
-          # Amazon SES. Provisioned in infrastructure/environments/staging/ses-alerting.tf,
-          # which also writes the DKIM and MAIL FROM records into Cloudflare, so
-          # the domain self-verifies.
-          smtp_smarthost: email-smtp.eu-central-1.amazonaws.com:587
-          smtp_from: alerts@inspi.cloud
-          # The SES SMTP username, which is an IAM access key id. Inline because
-          # Alertmanager has NO `smtp_auth_username_file` (verified: it rejects
-          # the field as unknown) — only the password has a file variant. AWS
-          # documents an access key id as an identifier rather than a secret, and
-          # the sensitive half stays in the mounted file below.
-          #
-          # Rotating the SES credential changes this value, so it needs a commit.
-          # Get it from: terraform -chdir=environments/staging output ses_smtp_username
-          smtp_auth_username: AKIA_ROTATED_AND_REMOVED
-          smtp_auth_password_file: /etc/alertmanager/secrets/alertmanager-receivers/smtp_password
-          smtp_require_tls: true
-
-          # Slack. Alertmanager accepts only incoming-webhook URLs here — it
-          # rejects bot tokens — which is why this credential is minted by hand
-          # (scripts/create-slack-webhook.sh) rather than by Terraform.
-          slack_api_url_file: /etc/alertmanager/secrets/alertmanager-receivers/slack_webhook_url
-
-        # Carried over verbatim from the chart default. Without these, a single
-        # incident delivers its critical, warning AND info alerts as separate
-        # messages — e.g. a node filling up fires PodPendingTooLong,
-        # PodDensityCeilingNear and the stock kubernetes-resources alerts at once.
-        inhibit_rules:
-          - source_matchers: [severity = critical]
-            target_matchers: [severity =~ warning|info]
-            equal: [namespace, alertname]
-          - source_matchers: [severity = warning]
-            target_matchers: [severity = info]
-            equal: [namespace, alertname]
-          - source_matchers: [alertname = InfoInhibitor]
-            target_matchers: [severity = info]
-            equal: [namespace]
-          - target_matchers: [alertname = InfoInhibitor]
-
-        route:
-          # Everything goes to both channels. Grouping is what keeps that
-          # tolerable: one message per (alert, namespace, severity) rather than
-          # one per firing instance, so a NAT outage taking out several
-          # certificates produces one notification, not forty.
-          group_by: [alertname, namespace, severity]
-          group_wait: 30s
-          group_interval: 5m
-          # A still-firing alert re-notifies twice a day. Shorter turns Slack
-          # into noise; longer and a problem you scrolled past disappears.
-          repeat_interval: 12h
-          receiver: lit-all
-
-          routes:
-            # Watchdog is the always-firing heartbeat kube-prometheus-stack ships
-            # to prove the pipeline works end to end. It MUST stay routed to
-            # "null" — the chart default does this, and losing it means being
-            # paged every 12 hours forever.
-            - matchers: [alertname = "Watchdog"]
-              receiver: "null"
-
-        receivers:
-          - name: "null"
-
-          - name: lit-all
-            slack_configs:
-              - channel: "#alerts"
-                send_resolved: true
-                title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
-                text: |-
-                  {{ range .Alerts -}}
-                  *{{ .Labels.severity | toUpper }}* — {{ .Annotations.summary }}
-                  {{ .Annotations.description }}
-                  {{ if .Annotations.runbook }}Runbook: `{{ .Annotations.runbook }}`{{ end }}
-                  {{ end }}
-            email_configs:
-              # SES is in the sandbox, so this address must be a verified SES
-              # identity (aws_ses_email_identity in ses-alerting.tf). Adding a
-              # second recipient requires SES production access.
-              - to: daniel.m.baranowski@gmail.com
-                send_resolved: true
-                headers:
-                  Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .Alerts | len }})'
-                html: |-
-                  {{ range .Alerts }}
-                  <p><b>{{ .Labels.severity | toUpper }} — {{ .Annotations.summary }}</b></p>
-                  <p>{{ .Annotations.description }}</p>
-                  {{ if .Annotations.runbook }}<p>Runbook: {{ .Annotations.runbook }}</p>{{ end }}
-                  <hr>
-                  {{ end }}
+        # The whole Alertmanager config comes from this Secret rather than from
+        # a `config:` block here, because smtp_auth_username must be injected
+        # from Secrets Manager and Alertmanager has no smtp_auth_username_file.
+        # Rendered by externalsecret-alertmanager-config.yaml in this same
+        # Kustomization — read its header before touching either file, the
+        # missing-Secret failure mode is silent.
+        configSecret: alertmanager-config
 
     # The chart ships both of these with EMPTY resource blocks, which makes them
     # BestEffort — first in line for eviction under node memory pressure. On a
