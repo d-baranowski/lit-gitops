@@ -16,7 +16,31 @@ spec:
       author:
         email: fluxcdbot@users.noreply.github.com
         name: fluxcdbot
-      messageTemplate: 'Automated image update by {{ .AutomationObject }}'
+      # Names what actually moved, and to which version.
+      #
+      # This is not cosmetic: the Flux Alert on this ImageUpdateAutomation
+      # (../../notifications/alert-deploys.yaml) sends the RENDERED COMMIT
+      # MESSAGE to Slack. With the previous bare template the deploy notification
+      # could only say "an automation ran" — this is the one place the service
+      # and version are truthfully available at deploy time.
+      #
+      # `.Changed`, NOT `.Updated`. The CRD in gotk-components.yaml states
+      # outright: "The `Updated` template field has been removed. Use `Changed`
+      # instead." A template referencing a removed field fails to render, the
+      # commit step errors, and NO image update is ever pushed — continuous
+      # delivery silently off while ECR and the ImagePolicies still look healthy.
+      #
+      # .Changed.Objects maps an ObjectIdentifier (Kind/Name) to its changes;
+      # each change carries .Setter, .OldValue and .NewValue.
+      messageTemplate: |
+        Automated image update by {{ .AutomationObject }}
+
+        {{ range $resource, $changes := .Changed.Objects -}}
+        {{ $resource.Kind }}/{{ $resource.Name }}
+        {{- range $change := $changes }}
+          {{ $change.OldValue }} -> {{ $change.NewValue }}
+        {{- end }}
+        {{ end }}
     push:
       branch: main
   update:
