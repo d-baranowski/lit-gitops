@@ -39,10 +39,10 @@ spec:
       storageClassName: gp3
 
     tempo:
-      # 3 days, not the 14 it used to be. Retention drives how many blocks the
-      # compactor holds open and replays, and this is a single-pod staging Tempo
-      # whose traces exist to debug a load test that ran minutes ago — not to be
-      # queried a fortnight later. Loki and Prometheus keep the durable record.
+      # Retention drives how many blocks the compactor holds open and replays.
+      # This is a single-pod staging Tempo whose traces exist to debug a run that
+      # happened minutes ago, not a fortnight ago; Loki and Prometheus keep the
+      # durable record.
       retention: 72h
 
       # NOTE: `resources` belongs UNDER `tempo:` in this chart (v1.24.x), not at
@@ -52,16 +52,11 @@ spec:
       # anywhere, counts as BestEffort, and is first to be evicted under memory
       # pressure. Same shape of trap as this chart's `extraEnvFrom`.
       #
-      # 2Gi, raised from 1Gi after the 2026-08-03 crash loop. A k6 run pushed
-      # enough spans to OOM the ingester, and the restart could not recover:
-      # replaying the WAL it had just written needed more memory than it had, so
-      # every restart OOMed at the same point. The logs are unambiguous — "wal
-      # replay complete", "Tempo started", "completing block", then exit 137
-      # about eighteen seconds in, seven times over.
-      #
-      # The headroom is what breaks that loop. Ingest is bursty by nature here:
-      # a load test is precisely a spike, so sizing to steady state guarantees
-      # this recurs on the next run.
+      # Sized for burst, not steady state. Ingest here is spiky by definition —
+      # load tests are the reason this cluster has traces at all — and an OOM is
+      # self-perpetuating: the ingester must replay the WAL it just wrote to come
+      # back, which costs more memory than writing it did. Too tight a limit
+      # turns one spike into a crash loop that cannot exit on its own.
       resources:
         requests:
           cpu: 100m
