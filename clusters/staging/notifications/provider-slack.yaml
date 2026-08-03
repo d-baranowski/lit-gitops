@@ -25,9 +25,14 @@ metadata:
   namespace: flux-system
 spec:
   type: slack
-  # Shows as the sender in Slack. The one mechanism that distinguishes these
-  # messages from Alertmanager's and from Jenkins' in a shared channel, now that
-  # all three post to #alerts.
+  # username is set but DOES NOT RENDER — verified in #alerts, where these arrive
+  # under the app's own name (lit-alerts) rather than flux-staging. A modern Slack
+  # app incoming webhook discards username and icon_emoji exactly as it discards
+  # channel. Kept only because Flux offers no alternative field; the messages are
+  # in practice self-identifying, since notification-controller puts the source
+  # object (imageupdateautomation/utr-staging-automation.flux-system) on line one.
+  #
+  # Jenkins cannot rely on that, so utroSlack prefixes its text with "[jenkins]".
   username: flux-staging
   secretRef:
     name: flux-slack
