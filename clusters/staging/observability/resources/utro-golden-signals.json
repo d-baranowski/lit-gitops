@@ -1,6 +1,6 @@
 {
   "uid": "utro-golden-signals",
-  "title": "Utro \u2014 Golden Signals",
+  "title": "Utro / Golden Signals",
   "description": "Latency, traffic, errors and saturation for the utro services. Built to be watched live during a k6 run (scripts/run-loadtest.sh): 15m window, 10s refresh. Every panel uses a single y-axis on purpose \u2014 req/s and milliseconds are never mixed on one plot.",
   "tags": [
     "utro",
