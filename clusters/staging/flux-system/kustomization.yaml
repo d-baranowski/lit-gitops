@@ -20,3 +20,4 @@ resources:
 - observability-kustomization.yaml
 - observability-resources-kustomization.yaml
 - cloudflared-kustomization.yaml
+- notifications-kustomization.yaml

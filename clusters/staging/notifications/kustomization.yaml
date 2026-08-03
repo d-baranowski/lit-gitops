@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Flux's own notification path: Provider + Alerts, plus the Secret they need.
+#
+# Separate from ./observability on purpose. That directory is Prometheus and
+# Alertmanager — alerting on the WORKLOADS. This is Flux telling you about
+# itself: what it deployed and when its own delivery broke. The two answer
+# different questions and fail independently; a broken observability stack must
+# not take the deploy notifications with it.
+#
+# No top-level `namespace:` — every resource here declares flux-system
+# explicitly, and Provider/Alert must share a namespace with each other (Alert's
+# providerRef has no namespace field) and with their event sources.
+resources:
+  # Must be applied for the Provider to resolve, but ordering is not enforced
+  # here: an Alert whose Provider secret is missing simply fails to SEND. It does
+  # not block reconciliation and it does not deadlock, so there is only a window
+  # of lost notifications, not a stuck cluster.
+  - externalsecret-slack.yaml
+  - provider-slack.yaml
+  - alert-deploys.yaml
+  - alert-failures.yaml

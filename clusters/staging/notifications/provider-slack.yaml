@@ -1,0 +1,33 @@
+# Where Flux sends notifications. Consumed by the Alerts alongside this file.
+#
+# The notification-controller has been installed and receiving events since
+# bootstrap — every other controller already runs with
+# `--events-addr=http://notification-controller...` (gotk-components.yaml). Until
+# this Provider and its Alerts existed, every one of those events was accepted
+# and dropped on the floor. This is the missing consumer, not new plumbing.
+#
+# THREE FIELDS DELIBERATELY ABSENT:
+#
+#   channel   A modern Slack app incoming webhook is BOUND to one channel; the
+#             channel field in the payload is ignored and Slack still returns
+#             200. Setting it would be cosmetic and actively misleading — someone
+#             would later change it and wonder why nothing moved.
+#   address   Mutually exclusive with secretRef. The webhook is a credential; it
+#             comes from Secrets Manager via externalsecret-slack.yaml.
+#   interval  "Deprecated and not used in v1beta3" per the CRD itself.
+#
+# apiVersion is v1beta3 because that is the ONLY version this cluster serves —
+# the CRDs shipped in gotk-components.yaml do not serve v1beta2.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: slack
+  namespace: flux-system
+spec:
+  type: slack
+  # Shows as the sender in Slack. The one mechanism that distinguishes these
+  # messages from Alertmanager's and from Jenkins' in a shared channel, now that
+  # all three post to #alerts.
+  username: flux-staging
+  secretRef:
+    name: flux-slack

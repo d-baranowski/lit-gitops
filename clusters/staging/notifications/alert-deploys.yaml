@@ -1,0 +1,46 @@
+# "Something actually deployed" — the CD half of the feedback loop.
+#
+# WHY ImageUpdateAutomation AND NOTHING ELSE
+#
+# The obvious choice is Kustomization/utro, and it is wrong twice over.
+#
+# kustomize-controller emits on SOURCE REVISION CHANGE, not on interval. The
+# flux-system GitRepository polls main every 1m, so any commit to lit-gitops —
+# a dashboard tweak, a README edit, an observability change — produces a new
+# revision and re-reconciles all 19 registered Kustomizations. Scoped to utro
+# that is still one "utro reconciled" message for every gitops commit that has
+# nothing to do with utro.
+#
+# And the event carries a git revision (main@sha1:...), NOT an image tag, so it
+# cannot answer the only question worth asking: which version is now running.
+# Noisy and uninformative at once.
+#
+# ImageUpdateAutomation fires only when a commit is actually pushed — i.e. only
+# when an image genuinely rolled forward — and its message is the rendered
+# commit message, which is the one place the service and version are truthfully
+# available. That is also why image-update-automation.yaml's messageTemplate is
+# worth enriching.
+#
+# EXPECT 1-2 MESSAGES PER RELEASE, NOT EXACTLY ONE. The seven ImageRepositories
+# scan on independent 5m intervals and are not phase-aligned with the
+# automation's own 5m window, so one release can land as more than one commit.
+# Nothing downstream should assume a 1:1 mapping.
+#
+# eventSeverity: info means "no events filtered" per the CRD — info AND error.
+# Errors from this source are therefore covered here as well as in
+# alert-failures.yaml; the duplicate is harmless and losing it would be worse.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: deploys
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: info
+  eventSources:
+    - kind: ImageUpdateAutomation
+      name: utr-staging-automation
+  eventMetadata:
+    cluster: staging
+    env: lit

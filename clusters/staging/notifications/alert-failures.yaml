@@ -1,0 +1,46 @@
+# "Delivery broke" — the half that matters more than the deploy notification.
+#
+# Wildcards are safe HERE and only here, because eventSeverity: error means
+# failures only. The same wildcards at info severity would fan out across all 19
+# Kustomizations on every gitops commit (see alert-deploys.yaml for why).
+#
+# ImageRepository is in the list for a specific failure this estate can hit: if
+# the ECR scan breaks — expired Pod Identity, a deleted repo, a registry outage —
+# ImagePolicy stops advancing and the ImageUpdateAutomation simply has nothing to
+# commit. No deploy happens, and because no deploy happens, alert-deploys.yaml
+# stays silent. Without this Alert the failure is indistinguishable from "nobody
+# merged anything today".
+#
+# HelmRelease covers the other side: the observability, cert-manager, gateway and
+# autoscaler stacks are Helm, and a failed upgrade there produces no
+# Kustomization error of its own.
+#
+# STILL NOT COVERED: a resource that is stalled rather than actively failing
+# emits no event at all, so it cannot reach this Alert. That gap is closed from
+# the metrics side instead — see
+# observability/resources/prometheusrule-flux-delivery.yaml.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: failures
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: error
+  eventSources:
+    - kind: Kustomization
+      name: '*'
+    - kind: HelmRelease
+      name: '*'
+    - kind: ImageRepository
+      name: '*'
+    - kind: ImagePolicy
+      name: '*'
+    - kind: ImageUpdateAutomation
+      name: '*'
+    - kind: GitRepository
+      name: '*'
+  eventMetadata:
+    cluster: staging
+    env: lit

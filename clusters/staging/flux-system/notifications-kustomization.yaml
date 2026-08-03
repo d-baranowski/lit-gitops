@@ -1,0 +1,38 @@
+# Flux's notification path — Provider + Alerts to Slack.
+#
+# WHY ITS OWN KUSTOMIZATION RATHER THAN JUST DROPPING THE FILES IN flux-system/
+#
+# The Provider and Alerts alone would be fine there: their CRDs ship in
+# gotk-components.yaml in the same apply, and kustomize-controller orders CRDs
+# before CRs. The ExternalSecret is what forces the split.
+#
+# On a COLD BOOTSTRAP the root flux-system Kustomization (gotk-sync.yaml,
+# path ./clusters/staging, no dependsOn) is what CREATES the
+# external-secrets-operator Kustomization. An ExternalSecret sitting in that same
+# apply references external-secrets.io/v1, which does not exist yet — the apply
+# fails as a unit, and the Kustomization that would have installed the CRD is
+# therefore never created. That is a permanent deadlock with nothing to recover
+# it, not a transient race.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: notifications
+  namespace: flux-system
+spec:
+  dependsOn:
+    # The aws-secretsmanager ClusterSecretStore. Same reason as
+    # cert-manager-secrets: without it the ExternalSecret sits in
+    # SecretSyncedError.
+    - name: external-secrets-resources
+  interval: 10m
+  path: ./clusters/staging/notifications
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # No `wait`, deliberately — unlike cert-manager-secrets, where a downstream
+  # ClusterIssuer genuinely depends on the Secret existing. NOTHING dependsOn
+  # this Kustomization, so waiting buys no ordering guarantee. It would only
+  # convert a failed Slack webhook sync into a permanently red row in
+  # `flux get kustomizations`, which is a real cost on a dashboard people scan
+  # for genuine problems.
