@@ -103,11 +103,49 @@ spec:
           limit_percentage: 80
           spike_limit_percentage: 25
 
+      # WHY EVERY EXPORTER BELOW CARRIES AN EXPLICIT sending_queue
+      #
+      # On 2026-08-03 Tempo OOMed under a k6 run and entered a crash loop. This
+      # collector then OOMed too — seven times — and took METRICS down with it,
+      # even though Prometheus was perfectly healthy. Traces and metrics share one
+      # process and one memory limit, so a trace-backend outage became a total
+      # telemetry outage.
+      #
+      # The default queue is not the safeguard it looks like. queue_size defaults
+      # to 1000 with sizer "requests", i.e. 1000 BATCHES — and send_batch_size
+      # above is 1024, so the ceiling is ~1,000,000 spans. That cannot fit in the
+      # 512Mi limit, so the container is OOMKilled long before the queue ever
+      # considers itself full. The pre-crash logs show exactly that: memory
+      # climbing 351 -> 444 MiB with "above hard limit, forcing a GC" while the
+      # exporter retried against a dead Tempo.
+      #
+      # So the ceiling is restated in a unit that can be checked against the
+      # memory limit, and every exporter gets its own — that independence is what
+      # keeps a Tempo failure from touching metrics.
       exporters:
         otlp/tempo:
           endpoint: tempo.observability.svc.cluster.local:4317
           tls:
             insecure: true
+          sending_queue:
+            enabled: true
+            # sizer: items counts SPANS. The default "requests" counts batches,
+            # which cannot be reasoned about against a memory limit at all.
+            sizer: items
+            # ~50-100 MiB of spans — comfortably inside 512Mi alongside the
+            # metrics queue and the collector's own overhead.
+            queue_size: 50000
+            num_consumers: 10
+            # MUST stay false. Blocking would apply backpressure through the OTLP
+            # receiver into the application's own export calls, turning a
+            # telemetry outage into application latency. Dropping spans is
+            # strictly the better failure.
+            block_on_overflow: false
+          retry_on_failure:
+            enabled: true
+            # 60s, not the 300s default: five minutes of retrying against a dead
+            # backend is five minutes of filling the queue.
+            max_elapsed_time: 60s
         prometheusremotewrite:
           endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write
           # Turns OTel resource attributes (service.name, deployment.environment)
@@ -115,6 +153,18 @@ spec:
           # and the per-service dashboard panels have nothing to group by.
           resource_to_telemetry_conversion:
             enabled: true
+          # Metrics get their own bounded queue for the same reason, sized
+          # smaller: data points are cheaper than spans and Prometheus is the
+          # backend that must not be starved when traces misbehave.
+          sending_queue:
+            enabled: true
+            sizer: items
+            queue_size: 20000
+            num_consumers: 5
+            block_on_overflow: false
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 60s
 
       service:
         pipelines:
