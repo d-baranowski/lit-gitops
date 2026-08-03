@@ -31,6 +31,11 @@ configMapGenerator:
     namespace: observability
     files:
       - utro-services.json
+  # The four golden signals on one screen — built to be watched during a k6 run.
+  - name: utro-dashboard-golden-signals
+    namespace: observability
+    files:
+      - utro-golden-signals.json
   - name: utro-dashboard-traces
     namespace: observability
     files:

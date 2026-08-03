@@ -1,0 +1,440 @@
+{
+  "uid": "utro-golden-signals",
+  "title": "Utro — Golden Signals",
+  "description": "Latency, traffic, errors and saturation for the utro services. Built to be watched live during a k6 run (scripts/run-loadtest.sh): 15m window, 10s refresh. Every panel uses a single y-axis on purpose — req/s and milliseconds are never mixed on one plot.",
+  "tags": ["utro", "golden-signals", "load-test"],
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "10s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Headline — the four signals right now",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Latency — p95",
+      "description": "95th percentile server-side RPC duration across all utro services. Thresholds are the SLO shape, not decoration: green under 200ms, amber to 500ms, red beyond.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "range": true,
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}[$__rate_interval])))"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 200 },
+              { "color": "#d03b3b", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Traffic — requests/sec",
+      "description": "Total server-side RPC rate. Deliberately has NO thresholds: traffic is neither good nor bad, so it wears a categorical colour rather than a status one.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "range": true,
+          "expr": "sum(rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\"}[$__rate_interval]))"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1,
+          "color": { "mode": "fixed", "fixedColor": "#3987e5" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#3987e5", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Errors — % of requests",
+      "description": "Share of RPCs returning a Connect error code. clamp_min on the denominator keeps the panel at 0 rather than NaN when traffic is idle between runs.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "range": true,
+          "expr": "100 * sum(rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\", rpc_connect_rpc_error_code!=\"\"}[$__rate_interval])) / clamp_min(sum(rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\"}[$__rate_interval])), 0.0001)"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 1 },
+              { "color": "#d03b3b", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Saturation — peak CPU vs limit",
+      "description": "The most saturated utro container as a percentage of its CPU limit. Past ~90% the kernel starts throttling, which shows up as latency in the panel on the left — that causal pair is the point of putting them on one screen.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "range": true,
+          "expr": "max(100 * sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"default\", container!=\"\", container!=\"POD\", pod=~\"utr-staging-.*\"}[$__rate_interval])) / clamp_min(sum by (pod) (kube_pod_container_resource_limits{namespace=\"default\", resource=\"cpu\", pod=~\"utr-staging-.*\"}), 0.0001))"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 70 },
+              { "color": "#d03b3b", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Latency & Traffic",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Latency — percentile spread",
+      "description": "p50, p95 and p99 on ONE axis, because all three are milliseconds. The gap between p50 and p99 widening under load is queueing; all three rising together is genuine slowdown.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "p50",
+          "editorMode": "code",
+          "range": true,
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}[$__rate_interval])))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "p95",
+          "editorMode": "code",
+          "range": true,
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}[$__rate_interval])))"
+        },
+        {
+          "refId": "C",
+          "legendFormat": "p99",
+          "editorMode": "code",
+          "range": true,
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(rpc_server_duration_milliseconds_bucket{service_name=~\"rpg\\\\..*\"}[$__rate_interval])))"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "axisSoftMin": 0 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Traffic — requests/sec by service",
+      "description": "Where the load actually lands. During a k6 run through the BFF, gateway and core carry the ramp while notification and payment stay flat.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\"}[$__rate_interval]))"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "stacking": { "mode": "none" } }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Errors & Saturation",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Errors — % of requests by service",
+      "description": "Error ratio per service. A step change here that coincides with the traffic ramp is capacity; one that does not is a bug.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "100 * sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\", rpc_connect_rpc_error_code!=\"\"}[$__rate_interval])) / clamp_min(sum by (service_name) (rate(rpc_server_duration_milliseconds_count{service_name=~\"rpg\\\\..*\"}[$__rate_interval])), 0.0001)"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "axisSoftMax": 5 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 1 },
+              { "color": "#d03b3b", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Saturation — CPU as % of limit",
+      "description": "Per-pod CPU against its own limit. 100% is not a soft ceiling: the kernel enforces it by throttling, which is the panel below.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "100 * sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"default\", container!=\"\", container!=\"POD\", pod=~\"utr-staging-.*\"}[$__rate_interval])) / clamp_min(sum by (pod) (kube_pod_container_resource_limits{namespace=\"default\", resource=\"cpu\", pod=~\"utr-staging-.*\"}), 0.0001)"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "axisSoftMax": 100 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Saturation — the second-order signals",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "CPU throttling — % of periods",
+      "description": "Share of CFS scheduling periods in which the kernel stopped the container because it hit its CPU limit. Anything above zero explains latency the CPU-usage panel alone would not. NOTE: this uses the *periods* counters, not container_cpu_cfs_throttled_seconds_total — that series is dropped by the kubelet scrape config in this cluster and returns nothing.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "100 * sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=\"default\", container!=\"\", pod=~\"utr-staging-.*\"}[$__rate_interval])) / clamp_min(sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=\"default\", container!=\"\", pod=~\"utr-staging-.*\"}[$__rate_interval])), 0.0001)"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "HPA replicas — autoscaling response",
+      "description": "Current replicas per HPA against its ceiling. This is the panel that shows the cluster REACTING to the load test rather than just absorbing it; a line pinned at max while latency climbs means the ceiling is the bottleneck.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{horizontalpodautoscaler}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_current_replicas{namespace=\"default\"})"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "{{horizontalpodautoscaler}} (max)",
+          "editorMode": "code",
+          "range": true,
+          "expr": "sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"default\"})"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "lineInterpolation": "stepAfter" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*\\(max\\)" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [8, 6] } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "DB connection pool — % in use",
+      "description": "Pool utilisation per service. The pool saturating before CPU does is the failure mode the 2026-07-29 outage produced, and it is invisible in the CPU panels.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "editorMode": "code",
+          "range": true,
+          "expr": "100 * sum by (service_name) (db_pool_connections_in_use) / clamp_min(sum by (service_name) (db_pool_connections_in_use + db_pool_connections_idle), 0.0001)"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
