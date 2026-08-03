@@ -22,6 +22,9 @@ resources:
   # Synthetic probe of the public endpoint + the alerts derived from RISKS.md
   - probe-public-endpoint.yaml
   - prometheusrule-lit-risks.yaml
+  # GitOps delivery health — suspended/stalled Flux resources, which produce no
+  # event and so cannot be caught by the Slack Alerts in ../../notifications/.
+  - prometheusrule-flux-delivery.yaml
 
 configMapGenerator:
   - name: utro-dashboard-services

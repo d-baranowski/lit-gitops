@@ -160,6 +160,157 @@ spec:
           memory: 64Mi
         limits:
           memory: 128Mi
+
+      # --- Flux delivery health -------------------------------------------
+      #
+      # Flux's controllers expose only gotk_reconcile_duration_seconds and some
+      # cache counters. There is NO gotk_reconcile_condition — it was removed,
+      # and upstream's monitoring docs now point here instead: kube-state-metrics
+      # reading the CR status conditions directly. Alerting on the old metric
+      # name would have been silently never-firing.
+      #
+      # This is what closes the gap Flux events cannot: an Alert only fires on an
+      # EVENT, so a resource that is stalled or suspended rather than actively
+      # failing produces nothing at all. A suspended ImageUpdateAutomation is the
+      # concrete case — suspend it and deployment stops with no error anywhere.
+      #
+      # DELIBERATELY OMITTED from upstream's example config: `collectors: []` and
+      # `--custom-resource-state-only=true`. Both are in fluxcd's snippet and both
+      # would disable every standard collector — taking out
+      # kube_deployment_status_replicas_unavailable (UtroDeploymentDegraded),
+      # PodPendingTooLong, PodDensityCeilingNear and the whole kubernetes-apps
+      # rule group. Upstream's own comment says to drop them when adding to an
+      # existing stack. Adding custom resources must not remove the built-ins.
+      rbac:
+        extraRules:
+          - apiGroups:
+              - kustomize.toolkit.fluxcd.io
+              - helm.toolkit.fluxcd.io
+              - source.toolkit.fluxcd.io
+              - image.toolkit.fluxcd.io
+            resources:
+              - kustomizations
+              - helmreleases
+              - gitrepositories
+              - imagerepositories
+              - imagepolicies
+              - imageupdateautomations
+            verbs: ["list", "watch"]
+
+      customResourceState:
+        enabled: true
+        config:
+          spec:
+            resources:
+              # Group/version must match what this cluster serves — v1 for
+              # kustomize/source/image, v2 for helm. A wrong version yields no
+              # metric and no error.
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux Kustomization resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, lastAppliedRevision]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux HelmRelease resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: GitRepository
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux GitRepository resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+              # The three below are the delivery path this estate actually
+              # depends on: ECR scan -> semver policy -> commit. A stall in any
+              # of them stops deployment silently.
+              - groupVersionKind:
+                  group: image.toolkit.fluxcd.io
+                  version: v1
+                  kind: ImageRepository
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux ImageRepository resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: image.toolkit.fluxcd.io
+                  version: v1
+                  kind: ImagePolicy
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux ImagePolicy resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: image.toolkit.fluxcd.io
+                  version: v1
+                  kind: ImageUpdateAutomation
+                metricNamePrefix: gotk
+                metrics:
+                  - name: "resource_info"
+                    help: "The current state of a Flux ImageUpdateAutomation resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
     nodeExporter:
       enabled: true
     prometheus-node-exporter:

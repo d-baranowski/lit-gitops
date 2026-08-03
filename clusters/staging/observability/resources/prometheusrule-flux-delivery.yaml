@@ -1,0 +1,114 @@
+# Alerts on the GitOps delivery path itself — "did the deploy happen at all".
+#
+# WHY THIS EXISTS SEPARATELY FROM THE FLUX SLACK ALERTS
+#
+# ../../../notifications/alert-failures.yaml notifies on Flux EVENTS, and an
+# event only fires when something actively fails. It cannot see the two states
+# that matter most here:
+#
+#   - SUSPENDED. `flux suspend image update utr-staging-automation` is a normal
+#     step (it is required before force-pushing lit-gitops). Forget to resume and
+#     deployment stops permanently, emitting nothing. Nothing else in this estate
+#     would notice.
+#   - STALLED. An ImageRepository that cannot reach ECR, or an ImagePolicy with
+#     no matching tag, sits Ready=False without generating fresh events. The
+#     symptom is silence, which is identical to "nobody merged anything".
+#
+# METRIC SOURCE: gotk_resource_info, produced by kube-state-metrics'
+# customResourceState reading the CR status conditions (configured in
+# ../helmrelease-kube-prometheus-stack.yaml). NOT gotk_reconcile_condition —
+# that metric no longer exists in Flux; the controllers expose only
+# gotk_reconcile_duration_seconds and cache counters. A rule written against the
+# old name would never fire and would look exactly like "everything is healthy".
+#
+# VERIFY THE METRIC EXISTS the first time this reconciles — the same warning the
+# lit-risks rules carry, and it applies doubly here because the whole point is
+# detecting silence:
+#   kubectl -n observability port-forward svc/kps-prometheus 9090:9090
+#   curl -s 'localhost:9090/api/v1/query?query=gotk_resource_info' | head -c 400
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: flux-delivery
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: observability
+spec:
+  groups:
+    - name: lit.gitops
+      rules:
+        # The specific failure that motivated this file. Scoped to the image
+        # automation chain rather than all Flux resources, because suspending a
+        # Kustomization briefly is routine, whereas a suspended image automation
+        # means releases stop reaching the cluster.
+        - alert: FluxImageAutomationSuspended
+          expr: |
+            gotk_resource_info{customresource_kind=~"ImageUpdateAutomation|ImagePolicy|ImageRepository", suspended="true"} == 1
+          # Long, because suspending IS the documented procedure around a
+          # lit-gitops history rewrite. This fires when someone forgot to resume,
+          # not while they are mid-operation.
+          for: 2h
+          labels:
+            severity: critical
+            component: gitops
+          annotations:
+            summary: "Flux {{ $labels.customresource_kind }}/{{ $labels.name }} has been suspended for 2h — releases are not deploying"
+            description: >-
+              Image automation is suspended, so merged releases retag ECR and then stop.
+              Nothing else reports this: no Flux event fires for a suspended resource, and
+              the workloads stay healthy on the old version. Resume with
+              `flux resume image update utr-staging-automation`.
+
+        # Ready=False on anything in the delivery chain. Covers the ECR-scan and
+        # no-matching-tag cases that leave ImagePolicy stalled.
+        - alert: FluxDeliveryResourceNotReady
+          expr: |
+            gotk_resource_info{customresource_kind=~"ImageUpdateAutomation|ImagePolicy|ImageRepository|GitRepository", ready="False"} == 1
+          for: 20m
+          labels:
+            severity: warning
+            component: gitops
+          annotations:
+            summary: "Flux {{ $labels.customresource_kind }}/{{ $labels.name }} is not ready"
+            description: >-
+              A link in the ECR-scan -> semver-policy -> git-commit chain is failing, so new
+              releases will not roll out. Likely causes: expired EKS Pod Identity for the ECR
+              scan, a deleted repository, or no tag matching the semver filter. Check
+              `flux get images all -A`.
+
+        # Applied state, as opposed to source state. A Kustomization that cannot
+        # apply leaves the cluster on the previous revision indefinitely.
+        - alert: FluxKustomizationNotReady
+          expr: |
+            gotk_resource_info{customresource_kind="Kustomization", ready="False"} == 1
+          # Longer than the delivery chain: several Kustomizations legitimately
+          # sit not-ready while a dependsOn ahead of them finishes, and the
+          # observability one has a 20m timeout of its own.
+          for: 30m
+          labels:
+            severity: warning
+            component: gitops
+          annotations:
+            summary: "Flux Kustomization/{{ $labels.name }} has been not-ready for 30m"
+            description: >-
+              Cluster state has stopped tracking git. Transient during a dependsOn cascade;
+              sustained means an apply is genuinely failing. `flux get kustomizations` and
+              `kubectl -n flux-system logs deploy/kustomize-controller`.
+
+        # kube-state-metrics is what produces every metric above. If its custom
+        # resource collector breaks, all three alerts above go quiet and look
+        # like health — the same silent-failure shape they exist to catch.
+        - alert: FluxMetricsMissing
+          expr: |
+            absent(gotk_resource_info)
+          for: 30m
+          labels:
+            severity: warning
+            component: gitops
+          annotations:
+            summary: "gotk_resource_info has disappeared — the GitOps alerts above cannot fire"
+            description: >-
+              kube-state-metrics is not exporting Flux custom resource state. Every alert in
+              this group is now silently disabled. Check the customResourceState block in
+              helmrelease-kube-prometheus-stack.yaml and that the RBAC extraRules still cover
+              the Flux API groups.
