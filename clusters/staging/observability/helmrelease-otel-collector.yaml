@@ -72,12 +72,16 @@ spec:
       metrics:
         enabled: false
 
+    # Headroom, not the fix. The bounded queues below are what stop a dead
+    # backend filling memory; this is slack for the burst that arrives before the
+    # queue starts shedding, since every app pushes OTLP through this one process
+    # and a load test spikes traces and metrics together.
     resources:
       requests:
         cpu: 50m
-        memory: 128Mi
+        memory: 256Mi
       limits:
-        memory: 512Mi
+        memory: 1Gi
 
     serviceMonitor:
       enabled: true
@@ -143,18 +147,19 @@ spec:
           # and the per-service dashboard panels have nothing to group by.
           resource_to_telemetry_conversion:
             enabled: true
-          # Metrics get their own bounded queue for the same reason, sized
-          # smaller: data points are cheaper than spans and Prometheus is the
-          # backend that must not be starved when traces misbehave.
-          sending_queue:
+          # remote_write_queue, NOT sending_queue. This exporter does not use the
+          # shared exporterhelper queue and rejects that key outright —
+          # "prometheusremotewriteexporter.Config has invalid keys: sending_queue"
+          # — which fails config parsing and crash-loops the whole collector,
+          # traces included.
+          #
+          # Its queue_size is already counted in OTLP metrics rather than
+          # batches, so unlike the traces queue above it needs no sizer to be
+          # meaningful against the memory limit.
+          remote_write_queue:
             enabled: true
-            sizer: items
             queue_size: 20000
             num_consumers: 5
-            block_on_overflow: false
-          retry_on_failure:
-            enabled: true
-            max_elapsed_time: 60s
 
       service:
         pipelines:
