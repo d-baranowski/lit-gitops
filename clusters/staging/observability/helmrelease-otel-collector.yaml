@@ -92,6 +92,24 @@ spec:
     # No GOMEMLIMIT here: the chart already derives it from the limit above and
     # sets it to 80%. Adding it via extraEnvs only duplicates the variable.
 
+    # Keep the collector off whichever node is running Prometheus. They are the
+    # two largest memory consumers in the estate, and co-scheduling them fills a
+    # t3.medium: Prometheus then cannot keep up with remote_write, the
+    # collector's exports time out, and it burns CPU retrying — degrading both.
+    #
+    # preferred, not required: if the cluster genuinely has nowhere else, running
+    # cramped beats not running at all. The node group minimum is what actually
+    # provides the room (terraform/environments/staging/main.tf).
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+
     serviceMonitor:
       enabled: true
 
