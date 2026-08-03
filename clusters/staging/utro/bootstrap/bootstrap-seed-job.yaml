@@ -185,11 +185,29 @@ spec:
               value: "staging"
             - name: SERVICE_VERSION
               value: "v0.0.11" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
-            # Tracing off: there is no otel-collector in this cluster, and with
-            # it enabled the Job's logs are ~99% "failed to upload metrics",
-            # which is exactly what made the StatefulSet's logs unreadable.
+            # Telemetry ON. The previous comment here said "there is no
+            # otel-collector in this cluster", and the log spam it described
+            # ("failed to upload metrics", ~99% of the Job's output) was the
+            # symptom of exporting into the void. That stopped being true when
+            # ../../observability/helmrelease-otel-collector.yaml landed — the
+            # collector is up at the endpoint below and every other utro service
+            # already reports through it.
+            #
+            # Endpoint and TR_HTTPS copied verbatim from core-deployment.yaml so
+            # all seven services agree; a mismatch here is silent, since the SDK
+            # just fails to export.
             - name: TR_ENABLED
+              value: "true"
+            - name: TR_ENDPOINT
+              value: "otel-collector.observability.svc.cluster.local:4318"
+            - name: TR_HTTPS
               value: "false"
+            # DB_TRACE stays OFF, unlike the long-running services. This Job bulk
+            # inserts the entire seed dataset, so per-statement spans would emit
+            # thousands of near-identical traces in one burst and bury the
+            # application traces around them in Tempo. The resource attributes
+            # this Job is wanted for (service.name/version) come from TR_ENABLED,
+            # not from DB_TRACE.
             - name: DB_TRACE
               value: "false"
             # Connects as `migrations`, which owns the core tables. Required:
