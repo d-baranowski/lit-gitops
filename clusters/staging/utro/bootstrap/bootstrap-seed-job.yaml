@@ -147,7 +147,7 @@ spec:
               fi
       containers:
         - name: bootstrap
-          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.10 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
+          image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-bootstrap:v0.0.11 # {"$imagepolicy": "flux-system:utr-staging-bootstrap"}
           volumeMounts:
             - name: gate
               mountPath: /gate
@@ -184,7 +184,7 @@ spec:
             - name: SERVICE_ENV
               value: "staging"
             - name: SERVICE_VERSION
-              value: "v0.0.10" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
+              value: "v0.0.11" # {"$imagepolicy": "flux-system:utr-staging-bootstrap:tag"}
             # Tracing off: there is no otel-collector in this cluster, and with
             # it enabled the Job's logs are ~99% "failed to upload metrics",
             # which is exactly what made the StatefulSet's logs unreadable.

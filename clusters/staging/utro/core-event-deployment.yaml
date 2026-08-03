@@ -47,7 +47,7 @@ spec:
     spec:
       containers:
       - name: core-event
-        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:v0.0.10 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
+        image: 277265293752.dkr.ecr.eu-central-1.amazonaws.com/utro-core-event:v0.0.11 # {"$imagepolicy": "flux-system:utr-staging-core-event"}
         ports:
         - containerPort: 18010
           name: health
@@ -59,7 +59,7 @@ spec:
         - name: LOG_LEVEL
           value: "debug"
         - name: SERVICE_VERSION
-          value: "v0.0.10" # {"$imagepolicy": "flux-system:utr-staging-core-event:tag"}
+          value: "v0.0.11" # {"$imagepolicy": "flux-system:utr-staging-core-event:tag"}
         - name: SERVICE_NAME
           value: "rpg.core-event"
         - name: SERVICE_ENV
