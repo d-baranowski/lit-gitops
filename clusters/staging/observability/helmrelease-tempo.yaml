@@ -39,7 +39,11 @@ spec:
       storageClassName: gp3
 
     tempo:
-      retention: 336h # 14 days
+      # 3 days, not the 14 it used to be. Retention drives how many blocks the
+      # compactor holds open and replays, and this is a single-pod staging Tempo
+      # whose traces exist to debug a load test that ran minutes ago — not to be
+      # queried a fortnight later. Loki and Prometheus keep the durable record.
+      retention: 72h
 
       # NOTE: `resources` belongs UNDER `tempo:` in this chart (v1.24.x), not at
       # the top level — the StatefulSet template reads .Values.tempo.resources.
@@ -47,12 +51,23 @@ spec:
       # ignored, leaving the container with no requests at all: it then schedules
       # anywhere, counts as BestEffort, and is first to be evicted under memory
       # pressure. Same shape of trap as this chart's `extraEnvFrom`.
+      #
+      # 2Gi, raised from 1Gi after the 2026-08-03 crash loop. A k6 run pushed
+      # enough spans to OOM the ingester, and the restart could not recover:
+      # replaying the WAL it had just written needed more memory than it had, so
+      # every restart OOMed at the same point. The logs are unambiguous — "wal
+      # replay complete", "Tempo started", "completing block", then exit 137
+      # about eighteen seconds in, seven times over.
+      #
+      # The headroom is what breaks that loop. Ingest is bursty by nature here:
+      # a load test is precisely a spike, so sizing to steady state guarantees
+      # this recurs on the next run.
       resources:
         requests:
           cpu: 100m
-          memory: 256Mi
+          memory: 512Mi
         limits:
-          memory: 1Gi
+          memory: 2Gi
 
       receivers:
         otlp:
