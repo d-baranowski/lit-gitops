@@ -26,6 +26,12 @@ spec:
     remediation:
       retries: 3
       strategy: rollback
+      # Rollback BETWEEN retries is fine — it restores a working release while
+      # the next attempt runs. Rolling back after the LAST retry is not: it
+      # reverts the very change that was meant to fix the failure, so a fix that
+      # is itself a config or resource change can never land. The release then
+      # sits failed on the old config with no retries left.
+      remediateLastFailure: false
   values:
     # Cluster-scoped watch. Only the observability namespace is used today, but
     # namespaceScope: true bakes the namespace into the operator's RBAC and
