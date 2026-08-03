@@ -79,6 +79,14 @@ spec:
       limits:
         memory: 1Gi
 
+    # Go's GC does not read the cgroup limit, so without this it happily grows
+    # the heap past 1Gi and the kernel kills the process before the
+    # memory_limiter processor gets a chance to shed. Set below the limit to
+    # leave room for the non-heap allocations GOMEMLIMIT does not cover.
+    extraEnvs:
+      - name: GOMEMLIMIT
+        value: 800MiB
+
     serviceMonitor:
       enabled: true
 
@@ -106,7 +114,7 @@ spec:
       # Every exporter declares its own sending_queue, because the defaults are
       # not a safeguard here: queue_size defaults to 1000 with sizer "requests",
       # meaning 1000 BATCHES, and send_batch_size above is 1024 — a ceiling near
-      # a million spans, far more than the 512Mi limit can hold. The container
+      # a million spans, far more than the memory limit can hold. The container
       # OOMs long before the queue considers itself full.
       #
       # Per-exporter queues also keep the two signals independent. Traces and
@@ -122,9 +130,10 @@ spec:
             # sizer: items counts SPANS. The default "requests" counts batches,
             # which cannot be reasoned about against a memory limit at all.
             sizer: items
-            # ~50-100 MiB of spans, inside the 1Gi limit alongside the metrics
-            # queue and the collector's own overhead.
-            queue_size: 50000
+            # Sized against the 1Gi limit. Spans carry attributes, so the
+            # in-memory cost per span is far above the wire size; 50k was enough
+            # to OOM this container with the backend healthy.
+            queue_size: 10000
             num_consumers: 10
             # MUST stay false. Blocking would apply backpressure through the OTLP
             # receiver into the application's own export calls, turning a
@@ -148,7 +157,7 @@ spec:
           # metrics, so it needs no sizer.
           remote_write_queue:
             enabled: true
-            queue_size: 20000
+            queue_size: 5000
             num_consumers: 5
 
       service:
