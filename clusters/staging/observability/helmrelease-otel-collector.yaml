@@ -78,16 +78,19 @@ spec:
       metrics:
         enabled: false
 
+    # 2Gi because 1Gi was not enough: this is the single ingest path for every
+    # app's traces AND metrics, and a load test spikes both together. The queue
+    # bounds below cap the steady state; this is the headroom for the burst that
+    # arrives before they start shedding.
     resources:
       requests:
         cpu: 50m
         memory: 256Mi
       limits:
-        memory: 1Gi
+        memory: 2Gi
 
     # No GOMEMLIMIT here: the chart already derives it from the limit above and
-    # sets it to 80% (819MiB at 1Gi). Adding it via extraEnvs only duplicates the
-    # variable.
+    # sets it to 80%. Adding it via extraEnvs only duplicates the variable.
 
     serviceMonitor:
       enabled: true
@@ -132,7 +135,7 @@ spec:
             # sizer: items counts SPANS. The default "requests" counts batches,
             # which cannot be reasoned about against a memory limit at all.
             sizer: items
-            # Sized against the 1Gi limit. Spans carry attributes, so the
+            # Sized against the memory limit. Spans carry attributes, so the
             # in-memory cost per span is far above the wire size; 50k was enough
             # to OOM this container with the backend healthy.
             queue_size: 10000
