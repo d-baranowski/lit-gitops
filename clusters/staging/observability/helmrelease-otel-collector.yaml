@@ -79,13 +79,9 @@ spec:
       limits:
         memory: 1Gi
 
-    # Go's GC does not read the cgroup limit, so without this it happily grows
-    # the heap past 1Gi and the kernel kills the process before the
-    # memory_limiter processor gets a chance to shed. Set below the limit to
-    # leave room for the non-heap allocations GOMEMLIMIT does not cover.
-    extraEnvs:
-      - name: GOMEMLIMIT
-        value: 800MiB
+    # No GOMEMLIMIT here: the chart already derives it from the limit above and
+    # sets it to 80% (819MiB at 1Gi). Adding it via extraEnvs only duplicates the
+    # variable.
 
     serviceMonitor:
       enabled: true
